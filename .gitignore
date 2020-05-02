@@ -1,0 +1,7 @@
+.*.swp
+*.wav
+*.txt
+*.ppm
+!smpte.ppm
+encode
+decode
