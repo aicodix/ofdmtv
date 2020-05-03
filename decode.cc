@@ -158,6 +158,25 @@ public:
 			}
 		}
 
+		DSP::SimpleLinearRegression<value> dirty(timing_buf, phase_buf, count);
+		value avg_diff = 0;
+		for (int i = 0; i < count; ++i)
+			avg_diff += dirty(timing_buf[i]) - phase_buf[i];
+		avg_diff /= value(count);
+		value var_diff = 0;
+		for (int i = 0; i < count; ++i)
+			var_diff += (dirty(timing_buf[i]) - phase_buf[i] - avg_diff) * (dirty(timing_buf[i]) - phase_buf[i] - avg_diff);
+		value std_dev = std::sqrt(var_diff/(count-1));
+		int significant = 0;
+		for (int i = 0; i < count; ++i) {
+			if (std::abs(dirty(timing_buf[i])-phase_buf[i]) < std_dev) {
+				timing_buf[significant] = timing_buf[i];
+				phase_buf[significant] = phase_buf[i];
+				++significant;
+			}
+		}
+		count = significant;
+
 		DSP::SimpleLinearRegression<value> sfo_cfo(timing_buf, phase_buf, count);
 		sfo_rad += sfo_cfo.slope() * symbol_len / value(symbol_len+guard_len);
 		cfo_rad -= sfo_cfo.yint() / value(symbol_len+guard_len);
@@ -281,6 +300,26 @@ struct Decoder
 					}
 				}
 				unwrap(phase, count);
+
+				DSP::SimpleLinearRegression<value> dirty(index, phase, count);
+				value avg_diff = 0;
+				for (int i = 0; i < count; ++i)
+					avg_diff += dirty(index[i]) - phase[i];
+				avg_diff /= value(count);
+				value var_diff = 0;
+				for (int i = 0; i < count; ++i)
+					var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
+				value std_dev = std::sqrt(var_diff/(count-1));
+				int significant = 0;
+				for (int i = 0; i < count; ++i) {
+					if (std::abs(dirty(index[i])-phase[i]) < std_dev) {
+						index[significant] = index[i];
+						phase[significant] = phase[i];
+						++significant;
+					}
+				}
+				count = significant;
+
 				DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
 				value slope = sfo_cfo.slope();
 				value yint = sfo_cfo.yint();
