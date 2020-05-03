@@ -282,53 +282,7 @@ struct Decoder
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
-		for (int n = 0; n < 2; ++n) {
-			if (n) {
-				for (int i = 0; i < mls1_len; ++i)
-					fdom[i+mls1_off] = head[i+mls1_off] / tail[i+mls1_off];
-				value avg_pwr(0);
-				for (int i = 0; i < mls1_len; ++i)
-					avg_pwr += norm(fdom[i+mls1_off]);
-				avg_pwr /= value(mls1_len);
-				int count = 0;
-				for (int i = 0; i < mls1_len; ++i) {
-					value power = norm(fdom[i+mls1_off]);
-					if (2 * power > avg_pwr && power < 2 * avg_pwr) {
-						phase[count] = arg(fdom[i+mls1_off]);
-						index[count] = i+mls1_off;
-						++count;
-					}
-				}
-				unwrap(phase, count);
-
-				DSP::SimpleLinearRegression<value> dirty(index, phase, count);
-				value avg_diff = 0;
-				for (int i = 0; i < count; ++i)
-					avg_diff += dirty(index[i]) - phase[i];
-				avg_diff /= value(count);
-				value var_diff = 0;
-				for (int i = 0; i < count; ++i)
-					var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
-				value std_dev = std::sqrt(var_diff/(count-1));
-				int significant = 0;
-				for (int i = 0; i < count; ++i) {
-					if (std::abs(dirty(index[i])-phase[i]) < std_dev) {
-						index[significant] = index[i];
-						phase[significant] = phase[i];
-						++significant;
-					}
-				}
-				count = significant;
-
-				DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
-				value slope = sfo_cfo.slope();
-				value yint = sfo_cfo.yint();
-				yint -= Const::TwoPi() * std::nearbyint(sfo_cfo(mls1_off+mls1_len/2) / Const::Pi());
-				sfo_rad += slope * symbol_len / value((img_height+3)*(symbol_len+guard_len));
-				cfo_rad -= yint / value((img_height+3)*(symbol_len+guard_len));
-				std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
-				std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
-			}
+		for (int n = 0; n < 3; ++n) {
 			value diff = sfo_rad * (rate / Const::TwoPi());
 			resample(tdom, buf, -diff, buffer_len);
 			DSP::Phasor<cmplx> osc;
@@ -337,8 +291,61 @@ struct Decoder
 				tdom[i] *= osc();
 			symbol_pos = correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi());
 			std::cerr << "resampled pos: " << symbol_pos << std::endl;
-			fwd(head, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
-			fwd(tail, tdom+symbol_pos+symbol_len+guard_len);
+			int distance;
+			if (n) {
+				fwd(head, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
+				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+				distance = (img_height+3)*(symbol_len+guard_len);
+			} else {
+				fwd(head, tdom+symbol_pos-(symbol_len+guard_len));
+				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+				distance = 2*(symbol_len+guard_len);
+			}
+			for (int i = 0; i < mls1_len; ++i)
+				fdom[i+mls1_off] = head[i+mls1_off] / tail[i+mls1_off];
+			value avg_pwr(0);
+			for (int i = 0; i < mls1_len; ++i)
+				avg_pwr += norm(fdom[i+mls1_off]);
+			avg_pwr /= value(mls1_len);
+
+			int count = 0;
+			for (int i = 0; i < mls1_len; ++i) {
+				value power = norm(fdom[i+mls1_off]);
+				if (2 * power > avg_pwr && power < 2 * avg_pwr) {
+					phase[count] = arg(fdom[i+mls1_off]);
+					index[count] = i+mls1_off;
+					++count;
+				}
+			}
+			unwrap(phase, count);
+
+			DSP::SimpleLinearRegression<value> dirty(index, phase, count);
+			value avg_diff = 0;
+			for (int i = 0; i < count; ++i)
+				avg_diff += dirty(index[i]) - phase[i];
+			avg_diff /= value(count);
+			value var_diff = 0;
+			for (int i = 0; i < count; ++i)
+				var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
+			value std_dev = std::sqrt(var_diff/(count-1));
+			int significant = 0;
+			for (int i = 0; i < count; ++i) {
+				if (std::abs(dirty(index[i])-phase[i]) < std_dev) {
+					index[significant] = index[i];
+					phase[significant] = phase[i];
+					++significant;
+				}
+			}
+			count = significant;
+
+			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
+			value slope = sfo_cfo.slope();
+			value yint = sfo_cfo.yint();
+			yint -= Const::TwoPi() * std::nearbyint(sfo_cfo(mls1_off+mls1_len/2) / Const::Pi());
+			sfo_rad += slope * symbol_len / value(distance);
+			cfo_rad -= yint / value(distance);
+			std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
+			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 		}
 
 		value img_fac = sqrt(value(symbol_len) / value(64 * img_width));
