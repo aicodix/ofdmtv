@@ -193,7 +193,7 @@ struct Decoder
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[symbol_len], tdom[buffer_len];
 	value rgb_line[3 * img_width];
-	value phase[mls1_len];
+	value phase[mls1_len], index[mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -266,9 +266,22 @@ struct Decoder
 		for (int n = 0; n < 2; ++n) {
 			if (n) {
 				for (int i = 0; i < mls1_len; ++i)
-					phase[i] = arg(head[i+mls1_off] / tail[i+mls1_off]);
-				unwrap(phase, mls1_len);
-				DSP::SimpleLinearRegression<value> sfo_cfo(phase, mls1_len, mls1_off);
+					fdom[i+mls1_off] = head[i+mls1_off] / tail[i+mls1_off];
+				value avg_pwr(0);
+				for (int i = 0; i < mls1_len; ++i)
+					avg_pwr += norm(fdom[i+mls1_off]);
+				avg_pwr /= value(mls1_len);
+				int count = 0;
+				for (int i = 0; i < mls1_len; ++i) {
+					value power = norm(fdom[i+mls1_off]);
+					if (2 * power > avg_pwr && power < 2 * avg_pwr) {
+						phase[count] = arg(fdom[i+mls1_off]);
+						index[count] = i+mls1_off;
+						++count;
+					}
+				}
+				unwrap(phase, count);
+				DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
 				value slope = sfo_cfo.slope();
 				value yint = sfo_cfo.yint();
 				yint -= Const::TwoPi() * std::nearbyint(sfo_cfo(mls1_off+mls1_len/2) / Const::Pi());
