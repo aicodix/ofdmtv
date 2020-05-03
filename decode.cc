@@ -209,9 +209,6 @@ struct Decoder
 			sum0 = sum1;
 		}
 		phase[len-1] += sum1;
-		value off = Const::TwoPi() * std::nearbyint(phase[len/2] / Const::TwoPi());
-		for (int i = 0; i < len; ++i)
-			phase[i] -= off;
 	}
 	void yuv_to_rgb(value *rgb, const value *yuv)
 	{
@@ -272,8 +269,11 @@ struct Decoder
 					phase[i] = arg(head[i+mls1_off] / tail[i+mls1_off]);
 				unwrap(phase, mls1_len);
 				DSP::SimpleLinearRegression<value> sfo_cfo(phase, mls1_len, mls1_off);
-				sfo_rad += sfo_cfo.slope() * symbol_len / value((img_height+3)*(symbol_len+guard_len));
-				cfo_rad -= sfo_cfo.yint() / value((img_height+3)*(symbol_len+guard_len));
+				value slope = sfo_cfo.slope();
+				value yint = sfo_cfo.yint();
+				yint -= Const::TwoPi() * std::nearbyint(sfo_cfo(mls1_off+mls1_len/2) / Const::Pi());
+				sfo_rad += slope * symbol_len / value((img_height+3)*(symbol_len+guard_len));
+				cfo_rad -= yint / value((img_height+3)*(symbol_len+guard_len));
 				std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 				std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 			}
