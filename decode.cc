@@ -144,9 +144,21 @@ public:
 		sfo_rad = 0;
 		cfo_rad = (shift-seq_off) * (Const::TwoPi() / symbol_len) - frac_cfo;
 
+		avg_pwr = 0;
 		for (int i = 0; i < seq_len; ++i)
-			phase_buf[i] = arg(tmp0[2*i+shift] * seq[2*i] * cmplx_shift);
-		DSP::SimpleLinearRegression<value> sfo_cfo(phase_buf, seq_len, shift, 2);
+			avg_pwr += norm(tmp0[2*i+shift]);
+		avg_pwr /= value(seq_len);
+		int count = 0;
+		for (int i = 0; i < seq_len; ++i) {
+			value power = norm(tmp0[2*i+shift]);
+			if (2 * power > avg_pwr && power < 2 * avg_pwr) {
+				phase_buf[count] = arg(tmp0[2*i+shift] * seq[2*i] * cmplx_shift);
+				timing_buf[count] = 2*i+shift;
+				++count;
+			}
+		}
+
+		DSP::SimpleLinearRegression<value> sfo_cfo(timing_buf, phase_buf, count);
 		sfo_rad += sfo_cfo.slope() * symbol_len / value(symbol_len+guard_len);
 		cfo_rad -= sfo_cfo.yint() / value(symbol_len+guard_len);
 
