@@ -261,42 +261,29 @@ struct Decoder
 				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 				distance = 2*(symbol_len+guard_len);
 			}
-			for (int i = 0; i < mls1_len; ++i)
-				fdom[i+mls1_off] = head[i+mls1_off] / tail[i+mls1_off];
-			value avg_pwr(0);
-			for (int i = 0; i < mls1_len; ++i)
-				avg_pwr += norm(fdom[i+mls1_off]);
-			avg_pwr /= value(mls1_len);
+			for (int i = 0; i < mls1_len; ++i) {
+				phase[i] = arg(head[i+mls1_off] / tail[i+mls1_off]);
+				index[i] = i+mls1_off;
+			}
+			unwrap(phase, mls1_len);
 
+			DSP::SimpleLinearRegression<value> dirty(index, phase, mls1_len);
+			value avg_diff = 0;
+			for (int i = 0; i < mls1_len; ++i)
+				avg_diff += dirty(index[i]) - phase[i];
+			avg_diff /= value(mls1_len);
+			value var_diff = 0;
+			for (int i = 0; i < mls1_len; ++i)
+				var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
+			value std_dev = std::sqrt(var_diff/(mls1_len-1));
 			int count = 0;
 			for (int i = 0; i < mls1_len; ++i) {
-				value power = norm(fdom[i+mls1_off]);
-				if (2 * power > avg_pwr && power < 2 * avg_pwr) {
-					phase[count] = arg(fdom[i+mls1_off]);
-					index[count] = i+mls1_off;
+				if (2 * std::abs(dirty(index[i])-phase[i]) < std_dev) {
+					index[count] = index[i];
+					phase[count] = phase[i];
 					++count;
 				}
 			}
-			unwrap(phase, count);
-
-			DSP::SimpleLinearRegression<value> dirty(index, phase, count);
-			value avg_diff = 0;
-			for (int i = 0; i < count; ++i)
-				avg_diff += dirty(index[i]) - phase[i];
-			avg_diff /= value(count);
-			value var_diff = 0;
-			for (int i = 0; i < count; ++i)
-				var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
-			value std_dev = std::sqrt(var_diff/(count-1));
-			int significant = 0;
-			for (int i = 0; i < count; ++i) {
-				if (2 * std::abs(dirty(index[i])-phase[i]) < std_dev) {
-					index[significant] = index[i];
-					phase[significant] = phase[i];
-					++significant;
-				}
-			}
-			count = significant;
 
 			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
 			value slope = sfo_cfo.slope();
