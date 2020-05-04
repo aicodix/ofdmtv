@@ -33,7 +33,7 @@ struct SchmidlCox
 	DSP::SchmittTrigger<value> treshold;
 	DSP::FallingEdgeTrigger falling;
 	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
-	cmplx seq[symbol_len], kern[symbol_len];
+	cmplx kern[symbol_len];
 	value phase_buf[symbol_len], timing_buf[symbol_len];
 	cmplx cmplx_shift = 0;
 	value timing_max = 0;
@@ -41,15 +41,14 @@ struct SchmidlCox
 public:
 	int symbol_pos = 0;
 	value cfo_rad = 0;
-	value sfo_rad = 0;
 
 	SchmidlCox(const cmplx *sequence) : treshold(value(0.26), value(0.29))
 	{
 		for (int i = 0; i < symbol_len; ++i)
-			seq[i] = 0;
+			tmp0[i] = 0;
 		for (int i = 0; i < seq_len; ++i)
-			seq[2*i] = sequence[i];
-		fwd(kern, seq);
+			tmp0[2*i] = sequence[i];
+		fwd(kern, tmp0);
 		for (int i = 0; i < symbol_len; ++i)
 			kern[i] = conj(kern[i]) / value(symbol_len);
 	}
@@ -141,46 +140,7 @@ public:
 			return false;
 
 		symbol_pos = sample_pos;
-		sfo_rad = 0;
 		cfo_rad = (shift-seq_off) * (Const::TwoPi() / symbol_len) - frac_cfo;
-
-		avg_pwr = 0;
-		for (int i = 0; i < seq_len; ++i)
-			avg_pwr += norm(tmp0[2*i+shift]);
-		avg_pwr /= value(seq_len);
-		int count = 0;
-		for (int i = 0; i < seq_len; ++i) {
-			value power = norm(tmp0[2*i+shift]);
-			if (2 * power > avg_pwr && power < 2 * avg_pwr) {
-				phase_buf[count] = arg(tmp0[2*i+shift] * seq[2*i] * cmplx_shift);
-				timing_buf[count] = 2*i+shift;
-				++count;
-			}
-		}
-
-		DSP::SimpleLinearRegression<value> dirty(timing_buf, phase_buf, count);
-		value avg_diff = 0;
-		for (int i = 0; i < count; ++i)
-			avg_diff += dirty(timing_buf[i]) - phase_buf[i];
-		avg_diff /= value(count);
-		value var_diff = 0;
-		for (int i = 0; i < count; ++i)
-			var_diff += (dirty(timing_buf[i]) - phase_buf[i] - avg_diff) * (dirty(timing_buf[i]) - phase_buf[i] - avg_diff);
-		value std_dev = std::sqrt(var_diff/(count-1));
-		int significant = 0;
-		for (int i = 0; i < count; ++i) {
-			if (2 * std::abs(dirty(timing_buf[i])-phase_buf[i]) < std_dev) {
-				timing_buf[significant] = timing_buf[i];
-				phase_buf[significant] = phase_buf[i];
-				++significant;
-			}
-		}
-		count = significant;
-
-		DSP::SimpleLinearRegression<value> sfo_cfo(timing_buf, phase_buf, count);
-		sfo_rad += sfo_cfo.slope() * symbol_len / value(symbol_len+guard_len);
-		cfo_rad -= sfo_cfo.yint() / value(symbol_len+guard_len);
-
 		return true;
 	}
 };
@@ -277,12 +237,12 @@ struct Decoder
 
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
-		sfo_rad = correlator.sfo_rad;
+		sfo_rad = 0;
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
-		for (int n = 0; n < 3; ++n) {
+		for (int n = 0; n < 4; ++n) {
 			value diff = sfo_rad * (rate / Const::TwoPi());
 			resample(tdom, buf, -diff, buffer_len);
 			DSP::Phasor<cmplx> osc;
@@ -292,7 +252,7 @@ struct Decoder
 			symbol_pos = correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi());
 			std::cerr << "resampled pos: " << symbol_pos << std::endl;
 			int distance;
-			if (n) {
+			if (n > 1) {
 				fwd(head, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
 				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 				distance = (img_height+3)*(symbol_len+guard_len);
