@@ -12,6 +12,7 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "resampler.hh"
 #include "trigger.hh"
 #include "complex.hh"
+#include "blockdc.hh"
 #include "hilbert.hh"
 #include "phasor.hh"
 #include "netpbm.hh"
@@ -164,6 +165,7 @@ struct Decoder
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
+	DSP::BlockDC<cmplx, value> blockdc;
 	DSP::Hilbert<cmplx, 129> hilbert;
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
@@ -211,12 +213,14 @@ struct Decoder
 	{
 		mls1_init();
 		bool real = pcm->channels() == 1;
+		blockdc.samples(2*(symbol_len+guard_len));
 		const cmplx *buf;
 		do  {
 			if (!pcm->good())
 				return;
 			cmplx tmp;
 			pcm->read(reinterpret_cast<value *>(&tmp), 1);
+			tmp = blockdc(tmp);
 			if (real)
 				tmp = hilbert(tmp.real());
 			buf = input_hist(tmp);
