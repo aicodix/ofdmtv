@@ -56,7 +56,7 @@ public:
 	{
 		cmplx P = cor(samples[buffer_len-2*symbol_len-correlator_len] * conj(samples[buffer_len-2*symbol_len]));
 		value R = pwr(norm(samples[buffer_len-2*symbol_len]));
-		value min_R = 0.01 * correlator_len;
+		value min_R = 0.0001 * correlator_len;
 		R = std::max(R, min_R);
 		value timing = norm(P) / (R * R);
 
