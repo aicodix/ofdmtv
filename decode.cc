@@ -273,6 +273,8 @@ struct Decoder
 
 			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
 			sfo_rad += sfo_cfo.slope() * symbol_len / value(distance);
+			value sfo_max = 0.0005 * Const::TwoPi();
+			sfo_rad = std::min(std::max(sfo_rad, -sfo_max), sfo_max);
 			cfo_rad -= sfo_cfo.yint() / value(distance);
 			std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
