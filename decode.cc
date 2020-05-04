@@ -169,7 +169,7 @@ public:
 		value std_dev = std::sqrt(var_diff/(count-1));
 		int significant = 0;
 		for (int i = 0; i < count; ++i) {
-			if (std::abs(dirty(timing_buf[i])-phase_buf[i]) < std_dev) {
+			if (2 * std::abs(dirty(timing_buf[i])-phase_buf[i]) < std_dev) {
 				timing_buf[significant] = timing_buf[i];
 				phase_buf[significant] = phase_buf[i];
 				++significant;
@@ -330,7 +330,7 @@ struct Decoder
 			value std_dev = std::sqrt(var_diff/(count-1));
 			int significant = 0;
 			for (int i = 0; i < count; ++i) {
-				if (std::abs(dirty(index[i])-phase[i]) < std_dev) {
+				if (2 * std::abs(dirty(index[i])-phase[i]) < std_dev) {
 					index[significant] = index[i];
 					phase[significant] = phase[i];
 					++significant;
