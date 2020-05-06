@@ -180,7 +180,7 @@ struct Decoder
 
 	void yuv_to_rgb(value *rgb, const value *yuv)
 	{
-		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.492), VMAX(0.877);
+		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.493), VMAX(0.877);
 		rgb[0] = yuv[0] + ((1-WR)/VMAX) * yuv[2];
 		rgb[1] = yuv[0] - (WB*(1-WB)/(UMAX*WG)) * yuv[1] - (WR*(1-WR)/(VMAX*WG)) * yuv[2];
 		rgb[2] = yuv[0] + ((1-WB)/UMAX) * yuv[1];

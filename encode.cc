@@ -37,7 +37,7 @@ struct Encoder
 
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
-		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.492), VMAX(0.877);
+		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.493), VMAX(0.877);
 		yuv[0] = WR * rgb[0] + WG * rgb[1] + WB * rgb[2];
 		yuv[1] = (UMAX/(1-WB)) * (rgb[2]-yuv[0]);
 		yuv[2] = (VMAX/(1-WR)) * (rgb[0]-yuv[0]);
