@@ -187,11 +187,11 @@ struct Decoder
 	}
 	void cmplx_to_rgb(value *rgb, const cmplx *inp)
 	{
-		value y0py1 = inp[0].real()+inp[1].real();
-		value y0my1 = inp[0].imag()-inp[1].imag();
+		value upv = inp[0].real()-inp[0].imag();
+		value umv = inp[1].real()-inp[1].imag();
 		value yuv[6] = {
-			(y0py1+y0my1)/2, (inp[0].imag()+inp[1].imag()-y0py1)/2, (inp[0].real()-inp[1].real()-y0my1)/2,
-			(y0py1-y0my1)/2, (inp[0].imag()+inp[1].imag()-y0py1)/2, (inp[0].real()-inp[1].real()-y0my1)/2
+			(inp[0].real()+inp[0].imag()+umv)/2, (upv+umv)/2, (upv-umv)/2,
+			(upv-inp[1].real()-inp[1].imag())/2, (upv+umv)/2, (upv-umv)/2
 		};
 		yuv_to_rgb(rgb, yuv);
 		yuv_to_rgb(rgb+3, yuv+3);
@@ -284,7 +284,7 @@ struct Decoder
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 		}
 
-		value img_fac = sqrt(value(symbol_len) / value(64 * img_width));
+		value img_fac = sqrt(value(symbol_len) / value(128 * img_width));
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < mls1_len; ++i)
 			head[i+mls1_off] *= (img_fac / mls1_fac) * mls1_sig[i];

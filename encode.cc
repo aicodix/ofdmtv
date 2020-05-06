@@ -47,8 +47,8 @@ struct Encoder
 		value yuv[6];
 		rgb_to_yuv(yuv, rgb);
 		rgb_to_yuv(yuv+3, rgb+3);
-		out[0] = cmplx(yuv[0]+(yuv[2]+yuv[5])/2, yuv[0]+(yuv[1]+yuv[4])/2);
-		out[1] = cmplx(yuv[3]-(yuv[2]+yuv[5])/2, yuv[3]+(yuv[1]+yuv[4])/2);
+		out[0] = cmplx(yuv[0]+(yuv[2]+yuv[5])/2, yuv[0]-(yuv[1]+yuv[4])/2);
+		out[1] = cmplx((yuv[1]+yuv[4])/2-yuv[3], (yuv[2]+yuv[5])/2-yuv[3]);
 	}
 	void symbol()
 	{
@@ -89,7 +89,7 @@ struct Encoder
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
 			fdom[i] = mls1_fac * (1 - 2 * seq1());
 		symbol();
-		value img_fac = sqrt(value(symbol_len) / value(64 * img_width));
+		value img_fac = sqrt(value(symbol_len) / value(128 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int j = 0; j < img_height; ++j) {
