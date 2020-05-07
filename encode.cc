@@ -9,6 +9,7 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 #include "netpbm.hh"
 #include "complex.hh"
 #include "utils.hh"
+#include "decibel.hh"
 #include "fft.hh"
 #include "wav.hh"
 #include "pcm.hh"
@@ -34,6 +35,7 @@ struct Encoder
 	cmplx tdom[symbol_len];
 	cmplx guard[guard_len];
 	value rgb_line[3 * img_width];
+	value papr_min, papr_max;
 
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
@@ -64,9 +66,21 @@ struct Encoder
 		pcm->write(reinterpret_cast<value *>(tdom), symbol_len, 2);
 		for (int i = 0; i < guard_len; ++i)
 			guard[i] = tdom[i];
+		value peak(0), mean(0);
+		for (int i = 0; i < symbol_len; ++i) {
+			value power = norm(tdom[i]);
+			peak = std::max(peak, power);
+			mean += power;
+		}
+		if (mean > 0) {
+			value papr = symbol_len * peak / mean;
+			papr_min = std::min(papr_min, papr);
+			papr_max = std::max(papr_max, papr);
+		}
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel) : pcm(pcm)
 	{
+		papr_min = 1000, papr_max = -1000;
 		CODE::MLS seq0(mls0_poly), seq1(mls1_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
@@ -125,6 +139,7 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		symbol();
+		std::cerr << "PAPR: " << DSP::decibel(papr_min) << " .. " << DSP::decibel(papr_max) << " dB" << std::endl;
 	}
 };
 
