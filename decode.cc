@@ -170,7 +170,7 @@ struct Decoder
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len, guard_len, mls0_len, mls0_off> correlator;
-	cmplx mls0_sig[mls0_len], mls1_sig[mls1_len];
+	cmplx mls0_sig[mls0_len];
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[symbol_len], tdom[buffer_len];
 	value rgb_line[3 * img_width];
@@ -203,15 +203,8 @@ struct Decoder
 			mls0_sig[i] = 1 - 2 * seq0();
 		return mls0_sig;
 	}
-	void mls1_init()
-	{
-		CODE::MLS seq1(mls1_poly);
-		for (int i = 0; i < mls1_len; ++i)
-			mls1_sig[i] = 1 - 2 * seq1();
-	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_init())
 	{
-		mls1_init();
 		bool real = pcm->channels() == 1;
 		blockdc.samples(2*(symbol_len+guard_len));
 		const cmplx *buf;
@@ -283,13 +276,6 @@ struct Decoder
 			std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 		}
-
-		value img_fac = sqrt(value(symbol_len) / value(128 * img_width));
-		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
-		for (int i = 0; i < mls1_len; ++i)
-			head[i+mls1_off] *= (img_fac / mls1_fac) * mls1_sig[i];
-		for (int i = 0; i < mls1_len; ++i)
-			tail[i+mls1_off] *= (img_fac / mls1_fac) * mls1_sig[i];
 		for (int j = 0; j < img_height; ++j) {
 			fwd(fdom, tdom+symbol_pos+(j-img_height-1)*(symbol_len+guard_len));
 			value x = value(j+1) / value(img_height+1);
