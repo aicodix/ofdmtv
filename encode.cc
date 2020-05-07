@@ -62,21 +62,26 @@ struct Encoder
 			x = value(0.5) * (value(1) - std::cos(DSP::Const<value>::Pi() * x));
 			guard[i] = DSP::lerp(x, guard[i], tdom[i+symbol_len-guard_len]);
 		}
-		pcm->write(reinterpret_cast<value *>(guard), guard_len, 2);
-		pcm->write(reinterpret_cast<value *>(tdom), symbol_len, 2);
-		for (int i = 0; i < guard_len; ++i)
-			guard[i] = tdom[i];
 		value peak(0), mean(0);
 		for (int i = 0; i < symbol_len; ++i) {
 			value power = norm(tdom[i]);
 			peak = std::max(peak, power);
 			mean += power;
 		}
+		for (int i = 0; i < guard_len; ++i) {
+			value power = norm(guard[i]);
+			peak = std::max(peak, power);
+			mean += power;
+		}
 		if (mean > 0) {
-			value papr = symbol_len * peak / mean;
+			value papr = (symbol_len + guard_len) * peak / mean;
 			papr_min = std::min(papr_min, papr);
 			papr_max = std::max(papr_max, papr);
 		}
+		pcm->write(reinterpret_cast<value *>(guard), guard_len, 2);
+		pcm->write(reinterpret_cast<value *>(tdom), symbol_len, 2);
+		for (int i = 0; i < guard_len; ++i)
+			guard[i] = tdom[i];
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel) : pcm(pcm)
 	{
