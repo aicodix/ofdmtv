@@ -35,7 +35,7 @@ struct Encoder
 	cmplx tdom[symbol_len];
 	cmplx guard[guard_len];
 	value rgb_line[3 * img_width];
-	value papr_min, papr_max;
+	cmplx papr_min, papr_max;
 
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
@@ -62,21 +62,22 @@ struct Encoder
 			x = value(0.5) * (value(1) - std::cos(DSP::Const<value>::Pi() * x));
 			guard[i] = DSP::lerp(x, guard[i], tdom[i+symbol_len-guard_len]);
 		}
-		value peak(0), mean(0);
+		cmplx peak, mean;
 		for (int i = 0; i < symbol_len; ++i) {
-			value power = norm(tdom[i]);
-			peak = std::max(peak, power);
+			cmplx power(tdom[i].real() * tdom[i].real(), tdom[i].imag() * tdom[i].imag());
+			peak = cmplx(std::max(peak.real(), power.real()), std::max(peak.imag(), power.imag()));
 			mean += power;
 		}
 		for (int i = 0; i < guard_len; ++i) {
-			value power = norm(guard[i]);
-			peak = std::max(peak, power);
+			cmplx power(guard[i].real() * guard[i].real(), guard[i].imag() * guard[i].imag());
+			peak = cmplx(std::max(peak.real(), power.real()), std::max(peak.imag(), power.imag()));
 			mean += power;
 		}
-		if (mean > 0) {
-			value papr = (symbol_len + guard_len) * peak / mean;
-			papr_min = std::min(papr_min, papr);
-			papr_max = std::max(papr_max, papr);
+		if (mean.real() > 0 && mean.imag() > 0) {
+			cmplx papr(peak.real() / mean.real(), peak.imag() / mean.imag());
+			papr *= value(symbol_len + guard_len);
+			papr_min = cmplx(std::min(papr_min.real(), papr.real()), std::min(papr_min.imag(), papr.imag()));
+			papr_max = cmplx(std::max(papr_max.real(), papr.real()), std::max(papr_max.imag(), papr.imag()));
 		}
 		pcm->write(reinterpret_cast<value *>(guard), guard_len, 2);
 		pcm->write(reinterpret_cast<value *>(tdom), symbol_len, 2);
@@ -85,7 +86,7 @@ struct Encoder
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel) : pcm(pcm)
 	{
-		papr_min = 1000, papr_max = -1000;
+		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
 		CODE::MLS seq0(mls0_poly), seq1(mls1_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
@@ -144,7 +145,9 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		symbol();
-		std::cerr << "PAPR: " << DSP::decibel(papr_min) << " .. " << DSP::decibel(papr_max) << " dB" << std::endl;
+		std::cerr << "real PAPR: " << DSP::decibel(papr_min.real()) << " .. " << DSP::decibel(papr_max.real()) << " dB" << std::endl;
+		if (pcm->channels() == 2)
+			std::cerr << "imag PAPR: " << DSP::decibel(papr_min.imag()) << " .. " << DSP::decibel(papr_max.imag()) << " dB" << std::endl;
 	}
 };
 
