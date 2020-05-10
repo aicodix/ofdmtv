@@ -132,8 +132,7 @@ public:
 		value rad_shift = frac_shift * (Const::TwoPi() / guard_frac);
 		cmplx cmplx_shift = DSP::polar<value>(1, rad_shift);
 
-		cmplx tmp = tmp2[shift] * cmplx_shift;
-		if (tmp.real() <= 10 * std::abs(tmp.imag()))
+		if (abs(arg(tmp2[shift] * cmplx_shift)) >= Const::FourthPi())
 			return false;
 
 		symbol_pos = sample_pos;
