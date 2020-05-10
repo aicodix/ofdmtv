@@ -22,7 +22,7 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "fft.hh"
 #include "mls.hh"
 
-template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len, int seq_len, int seq_off>
+template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
@@ -45,11 +45,7 @@ public:
 
 	SchmidlCox(const cmplx *sequence) : treshold(value(0.26), value(0.29))
 	{
-		for (int i = 0; i < symbol_len; ++i)
-			tmp0[i] = 0;
-		for (int i = 0; i < seq_len; ++i)
-			tmp0[2*i] = sequence[i];
-		fwd(kern, tmp0);
+		fwd(kern, sequence);
 		for (int i = 0; i < symbol_len; ++i)
 			kern[i] = conj(kern[i]) / value(symbol_len);
 	}
@@ -141,7 +137,7 @@ public:
 			return false;
 
 		symbol_pos = sample_pos;
-		cfo_rad = (shift-seq_off) * (Const::TwoPi() / symbol_len) - frac_cfo;
+		cfo_rad = shift * (Const::TwoPi() / symbol_len) - frac_cfo;
 		if (cfo_rad >= Const::Pi())
 			cfo_rad -= Const::TwoPi();
 		return true;
@@ -171,8 +167,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, 129> hilbert;
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
-	SchmidlCox<value, cmplx, buffer_len, symbol_len, guard_len, mls0_len, mls0_off> correlator;
-	cmplx mls0_sig[mls0_len];
+	SchmidlCox<value, cmplx, buffer_len, symbol_len, guard_len> correlator;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[symbol_len], tdom[buffer_len];
 	value rgb_line[3 * img_width];
@@ -198,14 +193,16 @@ struct Decoder
 		yuv_to_rgb(rgb, yuv);
 		yuv_to_rgb(rgb+3, yuv+3);
 	}
-	cmplx *mls0_init()
+	const cmplx *mls0_seq()
 	{
 		CODE::MLS seq0(mls0_poly);
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] = 0;
 		for (int i = 0; i < mls0_len; ++i)
-			mls0_sig[i] = 1 - 2 * seq0();
-		return mls0_sig;
+			fdom[2*i+mls0_off] = 1 - 2 * seq0();
+		return fdom;
 	}
-	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_init())
+	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
 	{
 		bool real = pcm->channels() == 1;
 		blockdc.samples(2*(symbol_len+guard_len));
