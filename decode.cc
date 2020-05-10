@@ -128,7 +128,7 @@ public:
 				next = power;
 			}
 		}
-		if (peak <= next * 8 || shift >= symbol_len - 2 * seq_len)
+		if (peak <= next * 8)
 			return false;
 
 		int guard_frac = symbol_len / guard_len;
@@ -142,6 +142,8 @@ public:
 
 		symbol_pos = sample_pos;
 		cfo_rad = (shift-seq_off) * (Const::TwoPi() / symbol_len) - frac_cfo;
+		if (cfo_rad >= Const::Pi())
+			cfo_rad -= Const::TwoPi();
 		return true;
 	}
 };
