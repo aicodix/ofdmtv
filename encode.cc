@@ -30,6 +30,7 @@ struct Encoder
 	static const int mls1_len = img_width;
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
+	static const int mls3_poly = 0b10111010010000001;
 	DSP::WritePCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	cmplx fdom[symbol_len];
@@ -88,7 +89,7 @@ struct Encoder
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel) : pcm(pcm)
 	{
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
-		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly);
+		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -118,7 +119,9 @@ struct Encoder
 			for (int i = 0; i < img_width; i += 2)
 				rgb_to_cmplx(fdom+i+img_off, rgb_line+3*i);
 			for (int i = 0; i < img_width; ++i)
-				fdom[i+img_off] *= img_fac * (1 - 2 * seq2());
+				fdom[i+img_off] = img_fac * cmplx(
+					fdom[i+img_off].real() * (1 - 2 * seq2()),
+					fdom[i+img_off].imag() * (1 - 2 * seq3()));
 			symbol();
 		}
 		for (int i = 0; i < symbol_len; ++i)
