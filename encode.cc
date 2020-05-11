@@ -33,10 +33,10 @@ struct Encoder
 	static const int mls3_poly = 0b10111010010000001;
 	DSP::WritePCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
-	cmplx fdom[symbol_len];
+	cmplx fdom[2 * symbol_len];
 	cmplx tdom[symbol_len];
 	cmplx guard[guard_len];
-	value rgb_line[3 * img_width];
+	value rgb_line[2 * 3 * img_width];
 	cmplx papr_min, papr_max;
 
 	void rgb_to_yuv(value *yuv, const value *rgb)
@@ -46,13 +46,13 @@ struct Encoder
 		yuv[1] = (UMAX/(1-WB)) * (rgb[2]-yuv[0]);
 		yuv[2] = (VMAX/(1-WR)) * (rgb[0]-yuv[0]);
 	}
-	void rgb_to_cmplx(cmplx *out, const value *rgb)
+	void rgb_to_cmplx(cmplx *out0, cmplx *out1, const value *rgb0, const value *rgb1)
 	{
-		value yuv[6];
-		rgb_to_yuv(yuv, rgb);
-		rgb_to_yuv(yuv+3, rgb+3);
-		out[0] = cmplx(yuv[0]+(yuv[2]+yuv[5])/2, yuv[0]-(yuv[1]+yuv[4])/2);
-		out[1] = cmplx((yuv[1]+yuv[4])/2-yuv[3], (yuv[2]+yuv[5])/2-yuv[3]);
+		value yuv0[3], yuv1[3];
+		rgb_to_yuv(yuv0, rgb0);
+		rgb_to_yuv(yuv1, rgb1);
+		*out0 = cmplx(yuv0[0]+(yuv0[2]+yuv1[2])/2, yuv0[0]-(yuv0[1]+yuv1[1])/2);
+		*out1 = cmplx((yuv0[1]+yuv1[1])/2-yuv1[0], (yuv0[2]+yuv1[2])/2-yuv1[0]);
 	}
 	void symbol()
 	{
@@ -114,15 +114,17 @@ struct Encoder
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
-		for (int j = 0; j < img_height; ++j) {
-			pel->read(rgb_line, img_width);
-			for (int i = 0; i < img_width; i += 2)
-				rgb_to_cmplx(fdom+i+img_off, rgb_line+3*i);
+		for (int j = 0; j < img_height; j += 2) {
+			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0; i < img_width; ++i)
-				fdom[i+img_off] = img_fac * cmplx(
-					fdom[i+img_off].real() * (1 - 2 * seq2()),
-					fdom[i+img_off].imag() * (1 - 2 * seq3()));
-			symbol();
+				rgb_to_cmplx(fdom+i+img_off, fdom+i+img_off+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+			for (int k = 0; k < 2; ++k) {
+				for (int i = 0; i < img_width; ++i)
+					fdom[i+img_off] = img_fac * cmplx(
+						fdom[i+img_off+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[i+img_off+symbol_len*k].imag() * (1 - 2 * seq3()));
+				symbol();
+			}
 		}
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;

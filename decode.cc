@@ -170,8 +170,8 @@ struct Decoder
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len, guard_len> correlator;
 	cmplx head[symbol_len], tail[symbol_len];
-	cmplx fdom[symbol_len], tdom[buffer_len];
-	value rgb_line[3 * img_width];
+	cmplx fdom[2 * symbol_len], tdom[buffer_len];
+	value rgb_line[2 * 3 * img_width];
 	value phase[mls1_len], index[mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
@@ -183,16 +183,14 @@ struct Decoder
 		rgb[1] = yuv[0] - (WB*(1-WB)/(UMAX*WG)) * yuv[1] - (WR*(1-WR)/(VMAX*WG)) * yuv[2];
 		rgb[2] = yuv[0] + ((1-WB)/UMAX) * yuv[1];
 	}
-	void cmplx_to_rgb(value *rgb, const cmplx *inp)
+	void cmplx_to_rgb(value *rgb0, value *rgb1, cmplx inp0, cmplx inp1)
 	{
-		value upv = inp[0].real()-inp[0].imag();
-		value umv = inp[1].real()-inp[1].imag();
-		value yuv[6] = {
-			(inp[0].real()+inp[0].imag()+umv)/2, (upv+umv)/2, (upv-umv)/2,
-			(upv-inp[1].real()-inp[1].imag())/2, (upv+umv)/2, (upv-umv)/2
-		};
-		yuv_to_rgb(rgb, yuv);
-		yuv_to_rgb(rgb+3, yuv+3);
+		value upv = inp0.real()-inp0.imag();
+		value umv = inp1.real()-inp1.imag();
+		value yuv0[3] = { (inp0.real()+inp0.imag()+umv)/2, (upv+umv)/2, (upv-umv)/2 };
+		value yuv1[3] = { (upv-inp1.real()-inp1.imag())/2, (upv+umv)/2, (upv-umv)/2 };
+		yuv_to_rgb(rgb0, yuv0);
+		yuv_to_rgb(rgb1, yuv1);
 	}
 	const cmplx *mls0_seq()
 	{
@@ -281,18 +279,20 @@ struct Decoder
 		seq1.reset();
 		for (int i = 0; i < mls1_len; ++i)
 			tail[i+mls1_off] *= (1 - 2 * seq1());
-		for (int j = 0; j < img_height; ++j) {
-			fwd(fdom, tdom+symbol_pos+(j-img_height-1)*(symbol_len+guard_len));
-			value x = value(j+1) / value(img_height+3);
+		for (int j = 0; j < img_height; j += 2) {
+			for (int k = 0; k < 2; ++k) {
+				fwd(fdom+symbol_len*k, tdom+symbol_pos+(j+k-img_height-1)*(symbol_len+guard_len));
+				value x = value(j+k+1) / value(img_height+3);
+				for (int i = 0; i < img_width; ++i)
+					fdom[i+img_off+symbol_len*k] /= DSP::lerp(x, head[i+img_off], tail[i+img_off]);
+				for (int i = 0; i < img_width; ++i)
+					fdom[i+img_off+symbol_len*k] = cmplx(
+						fdom[i+img_off+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[i+img_off+symbol_len*k].imag() * (1 - 2 * seq3()));
+			}
 			for (int i = 0; i < img_width; ++i)
-				fdom[i+img_off] /= DSP::lerp(x, head[i+img_off], tail[i+img_off]);
-			for (int i = 0; i < img_width; ++i)
-				fdom[i+img_off] = cmplx(
-					fdom[i+img_off].real() * (1 - 2 * seq2()),
-					fdom[i+img_off].imag() * (1 - 2 * seq3()));
-			for (int i = 0; i < img_width; i += 2)
-				cmplx_to_rgb(rgb_line+3*i, fdom+i+img_off);
-			pel->write(rgb_line, img_width);
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom[i+img_off], fdom[i+img_off+symbol_len]);
+			pel->write(rgb_line, 2 * img_width);
 		}
 	}
 };
