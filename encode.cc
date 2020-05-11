@@ -112,11 +112,11 @@ struct Encoder
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
+		seq1.reset();
 		for (int j = 0; j < img_height; ++j) {
 			pel->read(rgb_line, img_width);
 			for (int i = 0; i < img_width; i += 2)
 				rgb_to_cmplx(fdom+i+img_off, rgb_line+3*i);
-			seq1.reset();
 			for (int i = 0; i < img_width; ++i)
 				fdom[i+img_off] *= img_fac * (1 - 2 * seq1());
 			symbol();
