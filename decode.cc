@@ -158,6 +158,7 @@ struct Decoder
 	static const int mls1_off = img_off;
 	static const int mls1_len = img_width;
 	static const int mls1_poly = 0b1100110001;
+	static const int mls2_poly = 0b10001000000001011;
 	static const int buffer_len = (6 + img_height) * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
@@ -273,20 +274,19 @@ struct Decoder
 			std::cerr << "finer sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 		}
-		CODE::MLS seq1(mls1_poly);
+		CODE::MLS seq1(mls1_poly), seq2(mls2_poly);
 		for (int i = 0; i < mls1_len; ++i)
 			head[i+mls1_off] *= (1 - 2 * seq1());
 		seq1.reset();
 		for (int i = 0; i < mls1_len; ++i)
 			tail[i+mls1_off] *= (1 - 2 * seq1());
-		seq1.reset();
 		for (int j = 0; j < img_height; ++j) {
 			fwd(fdom, tdom+symbol_pos+(j-img_height-1)*(symbol_len+guard_len));
 			value x = value(j+1) / value(img_height+3);
 			for (int i = 0; i < img_width; ++i)
 				fdom[i+img_off] /= DSP::lerp(x, head[i+img_off], tail[i+img_off]);
 			for (int i = 0; i < img_width; ++i)
-				fdom[i+img_off] *= (1 - 2 * seq1());
+				fdom[i+img_off] *= (1 - 2 * seq2());
 			for (int i = 0; i < img_width; i += 2)
 				cmplx_to_rgb(rgb_line+3*i, fdom+i+img_off);
 			pel->write(rgb_line, img_width);
