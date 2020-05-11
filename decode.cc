@@ -275,7 +275,7 @@ struct Decoder
 		}
 		for (int j = 0; j < img_height; ++j) {
 			fwd(fdom, tdom+symbol_pos+(j-img_height-1)*(symbol_len+guard_len));
-			value x = value(j+1) / value(img_height+1);
+			value x = value(j+1) / value(img_height+3);
 			for (int i = 0; i < img_width; ++i)
 				fdom[i+img_off] /= DSP::lerp(x, head[i+img_off], tail[i+img_off]);
 			for (int i = 0; i < img_width; i += 2)
