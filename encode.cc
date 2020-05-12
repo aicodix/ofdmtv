@@ -20,13 +20,10 @@ struct Encoder
 {
 	static const int symbol_len = (1280 * rate) / 8000;
 	static const int guard_len = symbol_len / 8;
-	static const int img_off = 160;
 	static const int img_width = 320;
 	static const int img_height = 240;
-	static const int mls0_off = 192;
 	static const int mls0_len = 127;
 	static const int mls0_poly = 0b10001001;
-	static const int mls1_off = img_off;
 	static const int mls1_len = img_width;
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
@@ -38,6 +35,9 @@ struct Encoder
 	cmplx guard[guard_len];
 	value rgb_line[2 * 3 * img_width];
 	cmplx papr_min, papr_max;
+	int img_off;
+	int mls0_off;
+	int mls1_off;
 
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
@@ -86,8 +86,10 @@ struct Encoder
 		for (int i = 0; i < guard_len; ++i)
 			guard[i] = tdom[i];
 	}
-	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel) : pcm(pcm)
+	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off) : pcm(pcm)
 	{
+		mls1_off = img_off = (freq_off * symbol_len) / rate;
+		mls0_off = mls1_off + 32;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
 		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
@@ -158,8 +160,8 @@ struct Encoder
 
 int main(int argc, char **argv)
 {
-	if (argc != 6) {
-		std::cerr << "usage: " << argv[0] << " OUTPUT RATE BITS CHANNELS PICTURE" << std::endl;
+	if (argc < 6 || argc > 7) {
+		std::cerr << "usage: " << argv[0] << " OUTPUT RATE BITS CHANNELS PICTURE [OFFSET]" << std::endl;
 		return 1;
 	}
 
@@ -168,6 +170,15 @@ int main(int argc, char **argv)
 	int output_bits = std::atoi(argv[3]);
 	int output_chan = std::atoi(argv[4]);
 	const char *picture_name = argv[5];
+
+	int freq_off = 1000;
+	if (argc == 7)
+		freq_off = std::atoi(argv[6]);
+
+	if (freq_off < 0 || freq_off > 2000) {
+		std::cerr << "Unsupported frequency offset." << std::endl;
+		return 1;
+	}
 
 	typedef float value;
 	typedef DSP::Complex<value> cmplx;
@@ -182,22 +193,22 @@ int main(int argc, char **argv)
 	output_file.silence(output_rate);
 	switch (output_rate) {
 	case 8000:
-		delete new Encoder<value, cmplx, 8000>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 8000>(&output_file, &picture_file, freq_off);
 		break;
 	case 11025:
-		delete new Encoder<value, cmplx, 11025>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 11025>(&output_file, &picture_file, freq_off);
 		break;
 	case 16000:
-		delete new Encoder<value, cmplx, 16000>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 16000>(&output_file, &picture_file, freq_off);
 		break;
 	case 22050:
-		delete new Encoder<value, cmplx, 22050>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 22050>(&output_file, &picture_file, freq_off);
 		break;
 	case 44100:
-		delete new Encoder<value, cmplx, 44100>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 44100>(&output_file, &picture_file, freq_off);
 		break;
 	case 48000:
-		delete new Encoder<value, cmplx, 48000>(&output_file, &picture_file);
+		delete new Encoder<value, cmplx, 48000>(&output_file, &picture_file, freq_off);
 		break;
 	default:
 		std::cerr << "Unsupported sample rate." << std::endl;
