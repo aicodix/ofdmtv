@@ -51,8 +51,12 @@ struct Encoder
 		value yuv0[3], yuv1[3];
 		rgb_to_yuv(yuv0, rgb0);
 		rgb_to_yuv(yuv1, rgb1);
-		*out0 = cmplx(yuv0[0]+(yuv0[2]+yuv1[2])/2, yuv0[0]-(yuv0[1]+yuv1[1])/2);
-		*out1 = cmplx((yuv0[1]+yuv1[1])/2-yuv1[0], (yuv0[2]+yuv1[2])/2-yuv1[0]);
+		out0[0] = cmplx(yuv0[0]+(yuv0[2]+yuv1[2])/2, yuv0[0]-(yuv0[1]+yuv1[1])/2);
+		out1[0] = cmplx((yuv0[1]+yuv1[1])/2-yuv1[0], (yuv0[2]+yuv1[2])/2-yuv1[0]);
+		rgb_to_yuv(yuv0, rgb0+3);
+		rgb_to_yuv(yuv1, rgb1+3);
+		out0[1] = cmplx((yuv0[1]+yuv1[1])/2-yuv0[0], (yuv0[2]+yuv1[2])/2-yuv0[0]);
+		out1[1] = cmplx(yuv1[0]+(yuv0[2]+yuv1[2])/2, yuv1[0]-(yuv0[1]+yuv1[1])/2);
 	}
 	void symbol()
 	{
@@ -118,7 +122,7 @@ struct Encoder
 			fdom[i] = 0;
 		for (int j = 0; j < img_height; j += 2) {
 			pel->read(rgb_line, 2 * img_width);
-			for (int i = 0; i < img_width; ++i)
+			for (int i = 0; i < img_width; i += 2)
 				rgb_to_cmplx(fdom+i+img_off, fdom+i+img_off+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0; i < img_width; ++i)

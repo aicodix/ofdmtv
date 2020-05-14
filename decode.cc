@@ -183,14 +183,28 @@ struct Decoder
 		rgb[1] = yuv[0] - (WB*(1-WB)/(UMAX*WG)) * yuv[1] - (WR*(1-WR)/(VMAX*WG)) * yuv[2];
 		rgb[2] = yuv[0] + ((1-WB)/UMAX) * yuv[1];
 	}
-	void cmplx_to_rgb(value *rgb0, value *rgb1, cmplx inp0, cmplx inp1)
+	void cmplx_to_rgb(value *rgb0, value *rgb1, cmplx *inp0, cmplx *inp1)
 	{
-		value upv = inp0.real()-inp0.imag();
-		value umv = inp1.real()-inp1.imag();
-		value yuv0[3] = { (inp0.real()+inp0.imag()+umv)/2, (upv+umv)/2, (upv-umv)/2 };
-		value yuv1[3] = { (upv-inp1.real()-inp1.imag())/2, (upv+umv)/2, (upv-umv)/2 };
+		value upv[2] = {
+			inp0[0].real()-inp0[0].imag(),
+			inp1[1].real()-inp1[1].imag()
+		};
+		value umv[2] = {
+			inp1[0].real()-inp1[0].imag(),
+			inp0[1].real()-inp0[1].imag()
+		};
+		value yuv0[6] = {
+			(inp0[0].real()+inp0[0].imag()+umv[0])/2, (upv[0]+umv[0])/2, (upv[0]-umv[0])/2,
+			(upv[1]-inp0[1].real()-inp0[1].imag())/2, (upv[1]+umv[1])/2, (upv[1]-umv[1])/2
+		};
+		value yuv1[6] = {
+			(upv[0]-inp1[0].real()-inp1[0].imag())/2, (upv[0]+umv[0])/2, (upv[0]-umv[0])/2,
+			(inp1[1].real()+inp1[1].imag()+umv[1])/2, (upv[1]+umv[1])/2, (upv[1]-umv[1])/2
+		};
 		yuv_to_rgb(rgb0, yuv0);
 		yuv_to_rgb(rgb1, yuv1);
+		yuv_to_rgb(rgb0+3, yuv0+3);
+		yuv_to_rgb(rgb1+3, yuv1+3);
 	}
 	const cmplx *mls0_seq()
 	{
@@ -290,8 +304,8 @@ struct Decoder
 						fdom[i+img_off+symbol_len*k].real() * (1 - 2 * seq2()),
 						fdom[i+img_off+symbol_len*k].imag() * (1 - 2 * seq3()));
 			}
-			for (int i = 0; i < img_width; ++i)
-				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom[i+img_off], fdom[i+img_off+symbol_len]);
+			for (int i = 0; i < img_width; i += 2)
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+i+img_off, fdom+i+img_off+symbol_len);
 			pel->write(rgb_line, 2 * img_width);
 		}
 	}
