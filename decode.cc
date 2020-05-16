@@ -215,6 +215,30 @@ struct Decoder
 			fdom[2*i+mls0_off] = 1 - 2 * seq0();
 		return fdom;
 	}
+	int pos_error()
+	{
+		fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+		CODE::MLS seq1(mls1_poly);
+		for (int i = 0; i < mls1_len; ++i)
+			tail[i+mls1_off] *= (1 - 2 * seq1());
+		value avg = 0;
+		for (int i = 1; i < mls1_len; ++i)
+			avg += phase[i] = arg(tail[i+mls1_off] / tail[i-1+mls1_off]);
+		avg /= value(mls1_len-1);
+		value var = 0;
+		for (int i = 1; i < mls1_len; ++i)
+			var += (phase[i] - avg) * (phase[i] - avg);
+		value std_dev = std::sqrt(var/(mls1_len-2));
+		int count = 0;
+		value sum = 0;
+		for (int i = 1; i < mls1_len; ++i) {
+			if (2 * std::abs(phase[i] - avg) <= std_dev) {
+				sum += phase[i];
+				++count;
+			}
+		}
+		return std::nearbyint(sum * symbol_len / (count * Const::TwoPi()));
+	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
 	{
 		bool real = pcm->channels() == 1;
@@ -244,8 +268,12 @@ struct Decoder
 			osc.omega(-cfo_rad);
 			for (int i = 0; i < buffer_len; ++i)
 				tdom[i] *= osc();
-			symbol_pos = correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi());
-			std::cerr << "resampled pos: " << symbol_pos << std::endl;
+
+			int finer_pos = symbol_pos - pos_error();
+			if (correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2)
+				symbol_pos = finer_pos;
+			std::cerr << "finer pos: " << symbol_pos << std::endl;
+
 			int distance;
 			if (n > 1) {
 				fwd(head, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
