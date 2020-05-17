@@ -134,11 +134,11 @@ struct Encoder
 		value mls0_fac = sqrt(value(symbol_len) / value(4 * mls0_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
+		fdom[mls0_off-2] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] = - mls0_fac * (1 - 2 * seq0());
-		seq1.reset();
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] *= 1 - 2 * seq1();
+			fdom[2*i+mls0_off] = - (1 - 2 * seq0());
+		for (int i = 0; i < mls0_len; ++i)
+			fdom[2*i+mls0_off] *= fdom[2*(i-1)+mls0_off];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -170,11 +170,11 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq0.reset();
+		fdom[mls0_off-2] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] = mls0_fac * (1 - 2 * seq0());
-		seq1.reset();
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] *= 1 - 2 * seq1();
+			fdom[2*i+mls0_off] = 1 - 2 * seq0();
+		for (int i = 0; i < mls0_len; ++i)
+			fdom[2*i+mls0_off] *= fdom[2*(i-1)+mls0_off];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;

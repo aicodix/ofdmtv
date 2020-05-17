@@ -22,7 +22,7 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "fft.hh"
 #include "mls.hh"
 
-template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
+template <typename value, typename cmplx, int buffer_len, int symbol_len>
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
@@ -33,7 +33,7 @@ struct SchmidlCox
 	DSP::SMA4<value, value, correlator_len, false> pwr;
 	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
-	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
+	cmplx tmp0[symbol_len], tmp1[symbol_len];
 	cmplx kern[symbol_len];
 	value phase_buf[symbol_len], timing_buf[symbol_len];
 	cmplx cmplx_shift = 0;
@@ -90,32 +90,32 @@ public:
 		int sample_pos = buffer_len - 3*symbol_len + middle - buf_pos;
 		buf_pos = 0;
 		for (int i = 0; i < symbol_len; ++i)
-			tmp2[i] = samples[i+sample_pos] * osc();
-		fwd(tmp0, tmp2);
-		for (int i = 0; i < guard_len; ++i)
-			osc();
-		for (int i = 0; i < symbol_len; ++i)
-			tmp2[i] = samples[i+sample_pos+symbol_len+guard_len] * osc();
-		fwd(tmp1, tmp2);
+			tmp1[i] = samples[i+sample_pos] * osc();
+		fwd(tmp0, tmp1);
 		value avg_pwr(0);
 		for (int i = 0; i < symbol_len; ++i)
-			avg_pwr += norm(tmp1[i]);
+			avg_pwr += norm(tmp0[i]);
 		avg_pwr /= value(symbol_len);
 		for (int i = 0; i < symbol_len; ++i)
-			if (norm(tmp1[i]) <= avg_pwr * 0.001)
-				tmp0[i] = 0;
-			else
-				tmp0[i] /= tmp1[i];
-		fwd(tmp1, tmp0);
+			tmp1[i] = 0;
+		for (int k = 0; k < 2; ++k)
+			for (int i = k; i < symbol_len; i += 2)
+				if (norm(tmp0[i]) * 1000 > avg_pwr && norm(tmp0[i]) < avg_pwr * 1000 &&
+					norm(tmp0[i]) > norm(tmp0[(i-1+symbol_len)%symbol_len]) * 2 &&
+					norm(tmp0[i]) > norm(tmp0[(i+1+symbol_len)%symbol_len]) * 2 &&
+					std::min(norm(tmp0[i]), norm(tmp0[(i-2+symbol_len)%symbol_len])) * 2 >
+					std::max(norm(tmp0[i]), norm(tmp0[(i-2+symbol_len)%symbol_len])))
+						tmp1[i] = tmp0[i] / tmp0[(i-2+symbol_len)%symbol_len];
+		fwd(tmp0, tmp1);
 		for (int i = 0; i < symbol_len; ++i)
-			tmp1[i] *= kern[i];
-		bwd(tmp2, tmp1);
+			tmp0[i] *= kern[i];
+		bwd(tmp1, tmp0);
 
 		int shift = 0;
 		value peak = 0;
 		value next = 0;
 		for (int i = 0; i < symbol_len; ++i) {
-			value power = norm(tmp2[i]);
+			value power = norm(tmp1[i]);
 			if (power > peak) {
 				next = peak;
 				peak = power;
@@ -127,12 +127,7 @@ public:
 		if (peak <= next * 8)
 			return false;
 
-		int guard_frac = symbol_len / guard_len;
-		int frac_shift = shift % guard_frac;
-		value rad_shift = frac_shift * (Const::TwoPi() / guard_frac);
-		cmplx cmplx_shift = DSP::polar<value>(1, rad_shift);
-
-		if (abs(arg(tmp2[shift] * cmplx_shift)) >= Const::FourthPi())
+		if (abs(arg(tmp1[shift])) >= Const::FourthPi())
 			return false;
 
 		symbol_pos = sample_pos;
@@ -168,7 +163,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, 129> hilbert;
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
-	SchmidlCox<value, cmplx, buffer_len, symbol_len, guard_len> correlator;
+	SchmidlCox<value, cmplx, buffer_len, symbol_len> correlator;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len];
 	value rgb_line[2 * 3 * img_width];
