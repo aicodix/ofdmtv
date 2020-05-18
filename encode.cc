@@ -22,6 +22,7 @@ struct Encoder
 	static const int guard_len = symbol_len / 8;
 	static const int img_width = 320;
 	static const int img_height = 240;
+	static const int frame_width = 32;
 	static const int mls0_len = 127;
 	static const int mls0_poly = 0b10001001;
 	static const int mls1_len = img_width;
@@ -32,6 +33,7 @@ struct Encoder
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	cmplx fdom[2 * symbol_len];
 	cmplx tdom[symbol_len];
+	cmplx kern[symbol_len];
 	cmplx guard[guard_len];
 	value rgb_line[2 * 3 * img_width];
 	cmplx papr_min, papr_max;
@@ -58,11 +60,27 @@ struct Encoder
 		out0[1] = cmplx((yuv0[1]+yuv1[1])/2-yuv0[0], (yuv0[2]+yuv1[2])/2-yuv0[0]);
 		out1[1] = cmplx(yuv1[0]+(yuv0[2]+yuv1[2])/2, yuv1[0]-(yuv0[1]+yuv1[1])/2);
 	}
-	void symbol()
+	void improve_papr()
+	{
+		for (int n = 0; n < 1000; ++n) {
+			int peak = 0;
+			for (int i = 1; i < symbol_len; ++i)
+				if (norm(tdom[peak]) < norm(tdom[i]))
+					peak = i;
+			cmplx orig = tdom[peak];
+			for (int i = 0; i < peak; ++i)
+				tdom[i] -= orig * kern[symbol_len-peak+i];
+			for (int i = peak; i < symbol_len; ++i)
+				tdom[i] -= orig * kern[i-peak];
+		}
+	}
+	void symbol(bool papr_reduction = true)
 	{
 		bwd(tdom, fdom);
 		for (int i = 0; i < symbol_len; ++i)
 			tdom[i] /= sqrt(value(symbol_len));
+		if (papr_reduction)
+			improve_papr();
 		for (int i = 0; i < guard_len; ++i) {
 			value x = value(i) / value(guard_len - 1);
 			x = value(0.5) * (value(1) - std::cos(DSP::Const<value>::Pi() * x));
@@ -95,6 +113,22 @@ struct Encoder
 		mls1_off = img_off = (freq_off * symbol_len) / rate;
 		mls0_off = mls1_off + 32;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] = 0;
+		int count = 0;
+		for (int i = 0; i < frame_width; ++i) {
+			if (i+mls1_off-frame_width >= 0) {
+				fdom[i+mls1_off-frame_width] = 1;
+				++count;
+			}
+			if (i+mls1_off+mls1_len < symbol_len) {
+				fdom[i+mls1_off+mls1_len] = 1;
+				++count;
+			}
+		}
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] /= value(10 * count);
+		bwd(kern, fdom);
 		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
@@ -110,7 +144,7 @@ struct Encoder
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
 			fdom[i] *= 1 - 2 * seq1();
-		symbol();
+		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
@@ -146,7 +180,7 @@ struct Encoder
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
 			fdom[i] *= 1 - 2 * seq1();
-		symbol();
+		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
