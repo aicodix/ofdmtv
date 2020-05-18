@@ -92,14 +92,9 @@ struct Encoder
 			peak = cmplx(std::max(peak.real(), power.real()), std::max(peak.imag(), power.imag()));
 			mean += power;
 		}
-		for (int i = 0; i < guard_len; ++i) {
-			cmplx power(guard[i].real() * guard[i].real(), guard[i].imag() * guard[i].imag());
-			peak = cmplx(std::max(peak.real(), power.real()), std::max(peak.imag(), power.imag()));
-			mean += power;
-		}
 		if (mean.real() > 0 && mean.imag() > 0) {
 			cmplx papr(peak.real() / mean.real(), peak.imag() / mean.imag());
-			papr *= value(symbol_len + guard_len);
+			papr *= value(symbol_len);
 			papr_min = cmplx(std::min(papr_min.real(), papr.real()), std::min(papr_min.imag(), papr.imag()));
 			papr_max = cmplx(std::max(papr_max.real(), papr.real()), std::max(papr_max.imag(), papr.imag()));
 		}
