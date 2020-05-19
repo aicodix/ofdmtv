@@ -31,7 +31,7 @@ struct SchmidlCox
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::SMA4<cmplx, value, correlator_len, false> cor;
 	DSP::SMA4<value, value, correlator_len, false> pwr;
-	DSP::SchmittTrigger<value> treshold;
+	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
 	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
 	cmplx kern[symbol_len];
@@ -43,7 +43,7 @@ public:
 	int symbol_pos = 0;
 	value cfo_rad = 0;
 
-	SchmidlCox(const cmplx *sequence) : treshold(value(0.26), value(0.29))
+	SchmidlCox(const cmplx *sequence) : threshold(value(0.17), value(0.19))
 	{
 		fwd(kern, sequence);
 		for (int i = 0; i < symbol_len; ++i)
@@ -57,7 +57,7 @@ public:
 		R = std::max(R, min_R);
 		value timing = norm(P) / (R * R);
 
-		bool collect = treshold(timing);
+		bool collect = threshold(timing);
 		bool process = falling(collect);
 
 		if (!collect && !process)
