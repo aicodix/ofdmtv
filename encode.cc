@@ -228,14 +228,8 @@ int main(int argc, char **argv)
 	case 8000:
 		delete new Encoder<value, cmplx, 8000>(&output_file, &picture_file, freq_off);
 		break;
-	case 11025:
-		delete new Encoder<value, cmplx, 11025>(&output_file, &picture_file, freq_off);
-		break;
 	case 16000:
 		delete new Encoder<value, cmplx, 16000>(&output_file, &picture_file, freq_off);
-		break;
-	case 22050:
-		delete new Encoder<value, cmplx, 22050>(&output_file, &picture_file, freq_off);
 		break;
 	case 44100:
 		delete new Encoder<value, cmplx, 44100>(&output_file, &picture_file, freq_off);

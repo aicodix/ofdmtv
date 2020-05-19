@@ -365,14 +365,8 @@ int main(int argc, char **argv)
 	case 8000:
 		delete new Decoder<value, cmplx, 8000>(&output_file, &input_file);
 		break;
-	case 11025:
-		delete new Decoder<value, cmplx, 11025>(&output_file, &input_file);
-		break;
 	case 16000:
 		delete new Decoder<value, cmplx, 16000>(&output_file, &input_file);
-		break;
-	case 22050:
-		delete new Decoder<value, cmplx, 22050>(&output_file, &input_file);
 		break;
 	case 44100:
 		delete new Decoder<value, cmplx, 44100>(&output_file, &input_file);
