@@ -89,10 +89,10 @@ public:
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
-		int sample_pos = buffer_len - 3*symbol_len + middle - buf_pos;
+		symbol_pos = buffer_len - 3*symbol_len + middle - buf_pos;
 		buf_pos = 0;
 		for (int i = 0; i < symbol_len; ++i)
-			tmp1[i] = samples[i+sample_pos] * osc();
+			tmp1[i] = samples[i+symbol_pos] * osc();
 		fwd(tmp0, tmp1);
 		value avg_pwr(0);
 		for (int i = 0; i < symbol_len; ++i)
@@ -132,7 +132,6 @@ public:
 		if (abs(arg(tmp2[shift])) >= Const::FourthPi())
 			return false;
 
-		symbol_pos = sample_pos;
 		std::cerr << "coarse pos: " << symbol_pos << std::endl;
 		value avg = 0;
 		int count = 0;
