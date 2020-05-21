@@ -33,8 +33,8 @@ struct SchmidlCox
 	DSP::SMA4<value, value, correlator_len, false> pwr;
 	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
-	cmplx tmp0[symbol_len], tmp1[symbol_len];
-	cmplx kern[symbol_len];
+	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
+	cmplx seq[symbol_len], kern[symbol_len];
 	value phase_buf[symbol_len], timing_buf[symbol_len];
 	cmplx cmplx_shift = 0;
 	value timing_max = 0;
@@ -45,6 +45,8 @@ public:
 
 	SchmidlCox(const cmplx *sequence) : threshold(value(0.17), value(0.19))
 	{
+		for (int i = 0; i < symbol_len; ++i)
+			seq[i] = sequence[i];
 		fwd(kern, sequence);
 		for (int i = 0; i < symbol_len; ++i)
 			kern[i] = conj(kern[i]) / value(symbol_len);
@@ -109,13 +111,13 @@ public:
 		fwd(tmp0, tmp1);
 		for (int i = 0; i < symbol_len; ++i)
 			tmp0[i] *= kern[i];
-		bwd(tmp1, tmp0);
+		bwd(tmp2, tmp0);
 
 		int shift = 0;
 		value peak = 0;
 		value next = 0;
 		for (int i = 0; i < symbol_len; ++i) {
-			value power = norm(tmp1[i]);
+			value power = norm(tmp2[i]);
 			if (power > peak) {
 				next = peak;
 				peak = power;
@@ -127,10 +129,36 @@ public:
 		if (peak <= next * 8)
 			return false;
 
-		if (abs(arg(tmp1[shift])) >= Const::FourthPi())
+		if (abs(arg(tmp2[shift])) >= Const::FourthPi())
 			return false;
 
 		symbol_pos = sample_pos;
+		std::cerr << "coarse pos: " << symbol_pos << std::endl;
+		value avg = 0;
+		int count = 0;
+		for (int i = 0; i < symbol_len; ++i)
+			if (norm(tmp1[(i+shift)%symbol_len] * seq[i]) > 0)
+				avg += timing_buf[count++] = arg(tmp1[(i+shift)%symbol_len] * seq[i]);
+		avg /= value(count);
+		value var = 0;
+		for (int i = 1; i < count; ++i)
+			var += (timing_buf[i] - avg) * (timing_buf[i] - avg);
+		value std_dev = std::sqrt(var/(count-1));
+		int num = 0;
+		value sum = 0;
+		for (int i = 1; i < count; ++i) {
+			if (2 * std::abs(timing_buf[i] - avg) <= std_dev) {
+				sum += timing_buf[i];
+				++num;
+			}
+		}
+		int pos_err = std::nearbyint(sum * symbol_len / (2 * num * Const::TwoPi()));
+		int refined = middle - pos_err;
+		if (std::abs(pos_err) < correlator_len / 2 && 0 <= refined && refined < symbol_pos) {
+			symbol_pos -= pos_err;
+			frac_cfo = phase_buf[refined] / value(correlator_len);
+		}
+
 		cfo_rad = shift * (Const::TwoPi() / symbol_len) - frac_cfo;
 		if (cfo_rad >= Const::Pi())
 			cfo_rad -= Const::TwoPi();
