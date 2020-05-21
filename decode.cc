@@ -240,12 +240,12 @@ struct Decoder
 	int pos_error()
 	{
 		fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
-		CODE::MLS seq1(mls1_poly);
-		for (int i = 0; i < mls1_len; ++i)
-			tail[i+mls1_off] *= (1 - 2 * seq1());
 		value avg = 0;
 		for (int i = 1; i < mls1_len; ++i)
-			avg += phase[i] = arg(tail[i+mls1_off] / tail[i-1+mls1_off]);
+			if ((tail[i+mls1_off] / tail[i-1+mls1_off]).real() >= 0)
+				avg += phase[i] = arg(tail[i+mls1_off] / tail[i-1+mls1_off]);
+			else
+				avg += phase[i] = arg(- tail[i+mls1_off] / tail[i-1+mls1_off]);
 		avg /= value(mls1_len-1);
 		value var = 0;
 		for (int i = 1; i < mls1_len; ++i)
