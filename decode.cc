@@ -26,16 +26,15 @@ template <typename value, typename cmplx, int buffer_len, int symbol_len>
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
-	static const int correlator_len = symbol_len / 2;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
-	DSP::SMA4<cmplx, value, correlator_len, false> cor;
-	DSP::SMA4<value, value, correlator_len, false> pwr;
+	DSP::SMA4<cmplx, value, symbol_len, false> cor;
+	DSP::SMA4<value, value, symbol_len, false> pwr;
 	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
 	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
 	cmplx seq[symbol_len], kern[symbol_len];
-	value phase_buf[symbol_len], timing_buf[symbol_len];
+	value phase_buf[2*symbol_len], timing_buf[2*symbol_len];
 	cmplx cmplx_shift = 0;
 	value timing_max = 0;
 	int buf_pos = 0;
@@ -53,9 +52,9 @@ public:
 	}
 	bool operator()(const cmplx *samples)
 	{
-		cmplx P = cor(samples[buffer_len-2*symbol_len-correlator_len] * conj(samples[buffer_len-2*symbol_len]));
-		value R = pwr(norm(samples[buffer_len-2*symbol_len]));
-		value min_R = 0.0001 * correlator_len;
+		cmplx P = cor(samples[buffer_len-5*symbol_len] * conj(samples[buffer_len-4*symbol_len]));
+		value R = pwr(norm(samples[buffer_len-4*symbol_len]));
+		value min_R = 0.0001 * symbol_len;
 		R = std::max(R, min_R);
 		value timing = norm(P) / (R * R);
 
@@ -67,7 +66,7 @@ public:
 
 		value phase = arg(P);
 		timing_max = std::max(timing_max, timing);
-		if (buf_pos < symbol_len) {
+		if (buf_pos < 2*symbol_len) {
 			timing_buf[buf_pos] = timing;
 			phase_buf[buf_pos] = phase;
 			++buf_pos;
@@ -85,11 +84,11 @@ public:
 		int middle = (left + right) / 2;
 		timing_max = 0;
 
-		value frac_cfo = phase_buf[middle] / value(correlator_len);
+		value frac_cfo = phase_buf[middle] / value(symbol_len);
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
-		symbol_pos = buffer_len - 3*symbol_len + middle - buf_pos;
+		symbol_pos = buffer_len - 6*symbol_len + middle - buf_pos;
 		buf_pos = 0;
 		for (int i = 0; i < symbol_len; ++i)
 			tmp1[i] = samples[i+symbol_pos] * osc();
@@ -100,14 +99,11 @@ public:
 		avg_pwr /= value(symbol_len);
 		for (int i = 0; i < symbol_len; ++i)
 			tmp1[i] = 0;
-		for (int k = 0; k < 2; ++k)
-			for (int i = k; i < symbol_len; i += 2)
-				if (norm(tmp0[i]) * 1000 > avg_pwr && norm(tmp0[i]) < avg_pwr * 1000 &&
-					norm(tmp0[i]) > norm(tmp0[(i-1+symbol_len)%symbol_len]) * 2 &&
-					norm(tmp0[i]) > norm(tmp0[(i+1+symbol_len)%symbol_len]) * 2 &&
-					std::min(norm(tmp0[i]), norm(tmp0[(i-2+symbol_len)%symbol_len])) * 2 >
-					std::max(norm(tmp0[i]), norm(tmp0[(i-2+symbol_len)%symbol_len])))
-						tmp1[i] = tmp0[i] / tmp0[(i-2+symbol_len)%symbol_len];
+		for (int i = 0; i < symbol_len; ++i)
+			if (norm(tmp0[i]) * 1000 > avg_pwr && norm(tmp0[i]) < avg_pwr * 1000 &&
+				std::min(norm(tmp0[i]), norm(tmp0[(i-1+symbol_len)%symbol_len])) * 2 >
+				std::max(norm(tmp0[i]), norm(tmp0[(i-1+symbol_len)%symbol_len])))
+					tmp1[i] = tmp0[i] / tmp0[(i-1+symbol_len)%symbol_len];
 		fwd(tmp0, tmp1);
 		for (int i = 0; i < symbol_len; ++i)
 			tmp0[i] *= kern[i];
@@ -151,11 +147,11 @@ public:
 				++num;
 			}
 		}
-		int pos_err = std::nearbyint(sum * symbol_len / (2 * num * Const::TwoPi()));
+		int pos_err = std::nearbyint(sum * symbol_len / (num * Const::TwoPi()));
 		int refined = middle - pos_err;
-		if (std::abs(pos_err) < correlator_len / 2 && 0 <= refined && refined < symbol_pos) {
+		if (std::abs(pos_err) < symbol_len / 2 && 0 <= refined && refined < symbol_pos) {
 			symbol_pos -= pos_err;
-			frac_cfo = phase_buf[refined] / value(correlator_len);
+			frac_cfo = phase_buf[refined] / value(symbol_len);
 		}
 
 		cfo_rad = shift * (Const::TwoPi() / symbol_len) - frac_cfo;
@@ -190,7 +186,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, 129> hilbert;
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
-	SchmidlCox<value, cmplx, buffer_len, symbol_len> correlator;
+	SchmidlCox<value, cmplx, buffer_len, symbol_len/2> correlator;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len];
 	value rgb_line[2 * 3 * img_width];
@@ -231,10 +227,10 @@ struct Decoder
 	const cmplx *mls0_seq()
 	{
 		CODE::MLS seq0(mls0_poly);
-		for (int i = 0; i < symbol_len; ++i)
+		for (int i = 0; i < symbol_len/2; ++i)
 			fdom[i] = 0;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] = 1 - 2 * seq0();
+			fdom[i+mls0_off/2] = 1 - 2 * seq0();
 		return fdom;
 	}
 	int pos_error()
