@@ -91,7 +91,7 @@ public:
 		symbol_pos = buffer_len - 6*symbol_len + middle - buf_pos;
 		buf_pos = 0;
 		for (int i = 0; i < symbol_len; ++i)
-			tmp1[i] = samples[i+symbol_pos] * osc();
+			tmp1[i] = samples[i+symbol_pos+symbol_len] * osc();
 		fwd(tmp0, tmp1);
 		value avg_pwr(0);
 		for (int i = 0; i < symbol_len; ++i)
