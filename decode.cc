@@ -148,7 +148,7 @@ struct Decoder
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
 	static const int mls3_poly = 0b10111010010000001;
-	static const int buffer_len = (6 + img_height) * (symbol_len + guard_len);
+	static const int buffer_len = (7 + img_height) * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
@@ -157,10 +157,10 @@ struct Decoder
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
-	cmplx head[symbol_len], tail[symbol_len];
+	cmplx head[2 * symbol_len], tail[2 * symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len];
 	value rgb_line[2 * 3 * img_width];
-	value phase[mls1_len], index[mls1_len];
+	value phase[2 * mls1_len], index[2 * mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -276,25 +276,39 @@ struct Decoder
 				phase[i] = arg(head[i+mls1_off] / tail[i+mls1_off]);
 				index[i] = i+mls1_off;
 			}
+			int length = mls1_len;
+			if (1) {
+				length += mls1_len;
+				if (n > 1) {
+					fwd(head+symbol_len, tdom+symbol_pos-(img_height+4)*(symbol_len+guard_len));
+					fwd(tail+symbol_len, tdom+symbol_pos-(symbol_len+guard_len));
+				} else {
+					fwd(head+symbol_len, tdom+symbol_pos-(img_height+4)*(symbol_len+guard_len));
+					fwd(tail+symbol_len, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
+				}
+				for (int i = 0; i < mls1_len; ++i) {
+					phase[i+mls1_len] = arg(head[i+mls1_off+symbol_len] / tail[i+mls1_off+symbol_len]);
+					index[i+mls1_len] = i+mls1_off;
+				}
+			}
 
-			DSP::SimpleLinearRegression<value> dirty(index, phase, mls1_len);
+			DSP::SimpleLinearRegression<value> dirty(index, phase, length);
 			value avg_diff = 0;
-			for (int i = 0; i < mls1_len; ++i)
+			for (int i = 0; i < length; ++i)
 				avg_diff += dirty(index[i]) - phase[i];
-			avg_diff /= value(mls1_len);
+			avg_diff /= value(length);
 			value var_diff = 0;
-			for (int i = 0; i < mls1_len; ++i)
+			for (int i = 0; i < length; ++i)
 				var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
-			value std_dev = std::sqrt(var_diff/(mls1_len-1));
+			value std_dev = std::sqrt(var_diff/(length-1));
 			int count = 0;
-			for (int i = 0; i < mls1_len; ++i) {
+			for (int i = 0; i < length; ++i) {
 				if (2 * std::abs(dirty(index[i])-phase[i]) < std_dev) {
 					index[count] = index[i];
 					phase[count] = phase[i];
 					++count;
 				}
 			}
-
 			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
 			sfo_rad += sfo_cfo.slope() * symbol_len / value(distance);
 			value sfo_max = 0.0005 * Const::TwoPi();
