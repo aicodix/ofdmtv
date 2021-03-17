@@ -16,13 +16,14 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "hilbert.hh"
 #include "phasor.hh"
 #include "netpbm.hh"
+#include "delay.hh"
 #include "sma.hh"
 #include "wav.hh"
 #include "pcm.hh"
 #include "fft.hh"
 #include "mls.hh"
 
-template <typename value, typename cmplx, int buffer_len, int symbol_len>
+template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
@@ -30,19 +31,21 @@ struct SchmidlCox
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::SMA4<cmplx, value, symbol_len, false> cor;
 	DSP::SMA4<value, value, symbol_len, false> pwr;
+	DSP::SMA4<value, value, guard_len, false> match;
+	DSP::Delay<value, guard_len/2> delay;
 	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
 	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
 	cmplx seq[symbol_len], kern[symbol_len];
-	value phase_buf[2*symbol_len], timing_buf[2*symbol_len];
 	cmplx cmplx_shift = 0;
 	value timing_max = 0;
-	int buf_pos = 0;
+	value phase_max = 0;
+	int index_max = 0;
 public:
 	int symbol_pos = 0;
 	value cfo_rad = 0;
 
-	SchmidlCox(const cmplx *sequence) : threshold(value(0.17), value(0.19))
+	SchmidlCox(const cmplx *sequence) : threshold(value(0.17*guard_len), value(0.19*guard_len))
 	{
 		for (int i = 0; i < symbol_len; ++i)
 			seq[i] = sequence[i];
@@ -56,7 +59,8 @@ public:
 		value R = pwr(norm(samples[buffer_len-4*symbol_len]));
 		value min_R = 0.0001 * symbol_len;
 		R = std::max(R, min_R);
-		value timing = norm(P) / (R * R);
+		value timing = match(norm(P) / (R * R));
+		value phase = delay(arg(P));
 
 		bool collect = threshold(timing);
 		bool process = falling(collect);
@@ -64,32 +68,24 @@ public:
 		if (!collect && !process)
 			return false;
 
-		value phase = arg(P);
-		timing_max = std::max(timing_max, timing);
-		if (buf_pos < 2*symbol_len) {
-			timing_buf[buf_pos] = timing;
-			phase_buf[buf_pos] = phase;
-			++buf_pos;
+		if (timing_max < timing) {
+			timing_max = timing;
+			phase_max = phase;
+			index_max = guard_len / 2;
+		} else if (index_max < 3*symbol_len) {
+			++index_max;
 		}
 
 		if (!process)
 			return false;
 
-		int left = 0;
-		while (left < buf_pos-1 && timing_buf[left] < timing_max * 0.9)
-			++left;
-		int right = buf_pos-1;
-		while (right > 0 && timing_buf[right] < timing_max * 0.9)
-			--right;
-		int middle = (left + right) / 2;
-		timing_max = 0;
-
-		value frac_cfo = phase_buf[middle] / value(symbol_len);
+		value frac_cfo = phase_max / value(symbol_len);
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
-		symbol_pos = buffer_len - 6*symbol_len + middle - buf_pos;
-		buf_pos = 0;
+		symbol_pos = buffer_len - 6*symbol_len - index_max;
+		index_max = 0;
+		timing_max = 0;
 		for (int i = 0; i < symbol_len; ++i)
 			tmp1[i] = samples[i+symbol_pos+symbol_len] * osc();
 		fwd(tmp0, tmp1);
@@ -128,32 +124,6 @@ public:
 		if (abs(arg(tmp2[shift])) >= Const::FourthPi())
 			return false;
 
-		std::cerr << "coarse pos: " << symbol_pos << std::endl;
-		value avg = 0;
-		int count = 0;
-		for (int i = 0; i < symbol_len; ++i)
-			if (norm(tmp1[(i+shift)%symbol_len] * seq[i]) > 0)
-				avg += timing_buf[count++] = arg(tmp1[(i+shift)%symbol_len] * seq[i]);
-		avg /= value(count);
-		value var = 0;
-		for (int i = 1; i < count; ++i)
-			var += (timing_buf[i] - avg) * (timing_buf[i] - avg);
-		value std_dev = std::sqrt(var/(count-1));
-		int num = 0;
-		value sum = 0;
-		for (int i = 1; i < count; ++i) {
-			if (2 * std::abs(timing_buf[i] - avg) <= std_dev) {
-				sum += timing_buf[i];
-				++num;
-			}
-		}
-		int pos_err = std::nearbyint(sum * symbol_len / (num * Const::TwoPi()));
-		int refined = middle - pos_err;
-		if (std::abs(pos_err) < symbol_len / 2 && 0 <= refined && refined < symbol_pos) {
-			symbol_pos -= pos_err;
-			frac_cfo = phase_buf[refined] / value(symbol_len);
-		}
-
 		cfo_rad = shift * (Const::TwoPi() / symbol_len) - frac_cfo;
 		if (cfo_rad >= Const::Pi())
 			cfo_rad -= Const::TwoPi();
@@ -186,7 +156,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, 129> hilbert;
 	DSP::Resampler<value, 129, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
-	SchmidlCox<value, cmplx, buffer_len, symbol_len/2> correlator;
+	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len];
 	value rgb_line[2 * 3 * img_width];
