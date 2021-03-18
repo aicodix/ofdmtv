@@ -203,15 +203,14 @@ struct Decoder
 			fdom[i+mls0_off/2] = 1 - 2 * seq0();
 		return fdom;
 	}
-	int pos_error()
+	int pos_error(const cmplx *symbol)
 	{
-		fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 		value avg = 0;
 		for (int i = 1; i < mls1_len; ++i)
-			if ((tail[i+mls1_off] / tail[i-1+mls1_off]).real() >= 0)
-				avg += phase[i] = arg(tail[i+mls1_off] / tail[i-1+mls1_off]);
+			if ((symbol[i+mls1_off] / symbol[i-1+mls1_off]).real() >= 0)
+				avg += phase[i] = arg(symbol[i+mls1_off] / symbol[i-1+mls1_off]);
 			else
-				avg += phase[i] = arg(- tail[i+mls1_off] / tail[i-1+mls1_off]);
+				avg += phase[i] = arg(- symbol[i+mls1_off] / symbol[i-1+mls1_off]);
 		avg /= value(mls1_len-1);
 		value var = 0;
 		for (int i = 1; i < mls1_len; ++i)
@@ -256,20 +255,21 @@ struct Decoder
 			osc.omega(-cfo_rad);
 			for (int i = 0; i < buffer_len; ++i)
 				tdom[i] *= osc();
-
-			int finer_pos = symbol_pos - pos_error();
-			if (correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2)
-				symbol_pos = finer_pos;
-			std::cerr << "finer pos: " << symbol_pos << std::endl;
-
+			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+			if (1) {
+				int finer_pos = symbol_pos - pos_error(tail);
+				if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
+					symbol_pos = finer_pos;
+					fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+					std::cerr << "finer pos: " << symbol_pos << std::endl;
+				}
+			}
 			int distance;
 			if (n > 1) {
 				fwd(head, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
-				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 				distance = (img_height+3)*(symbol_len+guard_len);
 			} else {
 				fwd(head, tdom+symbol_pos-(symbol_len+guard_len));
-				fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 				distance = 2*(symbol_len+guard_len);
 			}
 			for (int i = 0; i < mls1_len; ++i) {
@@ -279,13 +279,11 @@ struct Decoder
 			int length = mls1_len;
 			if (1) {
 				length += mls1_len;
-				if (n > 1) {
-					fwd(head+symbol_len, tdom+symbol_pos-(img_height+4)*(symbol_len+guard_len));
+				fwd(head+symbol_len, tdom+symbol_pos-(img_height+4)*(symbol_len+guard_len));
+				if (n > 1)
 					fwd(tail+symbol_len, tdom+symbol_pos-(symbol_len+guard_len));
-				} else {
-					fwd(head+symbol_len, tdom+symbol_pos-(img_height+4)*(symbol_len+guard_len));
+				else
 					fwd(tail+symbol_len, tdom+symbol_pos-(img_height+2)*(symbol_len+guard_len));
-				}
 				for (int i = 0; i < mls1_len; ++i) {
 					phase[i+mls1_len] = arg(head[i+mls1_off+symbol_len] / tail[i+mls1_off+symbol_len]);
 					index[i+mls1_len] = i+mls1_off;
