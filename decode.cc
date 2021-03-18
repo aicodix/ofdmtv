@@ -256,7 +256,7 @@ struct Decoder
 			for (int i = 0; i < buffer_len; ++i)
 				tdom[i] *= osc();
 			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
-			if (1) {
+			if (n > 0) {
 				int finer_pos = symbol_pos - pos_error(tail);
 				if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
 					symbol_pos = finer_pos;
