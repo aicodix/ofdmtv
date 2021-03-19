@@ -239,7 +239,7 @@ struct Decoder
 				idx = i;
 		if (idx > symbol_len / 2)
 			idx -= symbol_len;
-		return idx;
+		return -idx;
 	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
 	{
@@ -259,7 +259,7 @@ struct Decoder
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
 		int dis = displacement(buf+symbol_pos-(img_height+2)*(symbol_len+guard_len), buf+symbol_pos+(symbol_len+guard_len));
-		sfo_rad = -(dis * Const::TwoPi()) / ((img_height+3)*(symbol_len+guard_len));
+		sfo_rad = (dis * Const::TwoPi()) / ((img_height+3)*(symbol_len+guard_len));
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
