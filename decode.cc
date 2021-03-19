@@ -249,12 +249,17 @@ struct Decoder
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
 		for (int n = 0; n < 4; ++n) {
-			value diff = sfo_rad * (rate / Const::TwoPi());
-			resample(tdom, buf, -diff, buffer_len);
 			DSP::Phasor<cmplx> osc;
 			osc.omega(-cfo_rad);
-			for (int i = 0; i < buffer_len; ++i)
-				tdom[i] *= osc();
+			if (n > 0) {
+				value diff = sfo_rad * (rate / Const::TwoPi());
+				resample(tdom, buf, -diff, buffer_len);
+				for (int i = 0; i < buffer_len; ++i)
+					tdom[i] *= osc();
+			} else {
+				for (int i = 0; i < buffer_len; ++i)
+					tdom[i] = buf[i] * osc();
+			}
 			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 			if (n > 0) {
 				int finer_pos = symbol_pos - pos_error(tail);
