@@ -254,6 +254,8 @@ struct Decoder
 			if (n > 0) {
 				value diff = sfo_rad * (rate / Const::TwoPi());
 				resample(tdom, buf, -diff, buffer_len);
+				symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
+				std::cerr << "resam pos: " << symbol_pos << std::endl;
 				for (int i = 0; i < buffer_len; ++i)
 					tdom[i] *= osc();
 			} else {
