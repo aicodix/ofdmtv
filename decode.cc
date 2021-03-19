@@ -226,6 +226,21 @@ struct Decoder
 		}
 		return std::nearbyint(sum * symbol_len / (count * Const::TwoPi()));
 	}
+	int displacement(const cmplx *sym0, const cmplx *sym1)
+	{
+		fwd(head, sym0);
+		fwd(tail, sym1);
+		for (int i = 0; i < symbol_len; ++i)
+			head[i] *= conj(tail[i]);
+		bwd(tail, head);
+		int idx = 0;
+		for (int i = 0; i < symbol_len; ++i)
+			if (norm(tail[i]) > norm(tail[idx]))
+				idx = i;
+		if (idx > symbol_len / 2)
+			idx -= symbol_len;
+		return idx;
+	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
 	{
 		bool real = pcm->channels() == 1;
@@ -243,7 +258,8 @@ struct Decoder
 
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
-		sfo_rad = 0;
+		int dis = displacement(buf+symbol_pos-(img_height+2)*(symbol_len+guard_len), buf+symbol_pos+(symbol_len+guard_len));
+		sfo_rad = -(dis * Const::TwoPi()) / ((img_height+3)*(symbol_len+guard_len));
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
@@ -251,17 +267,12 @@ struct Decoder
 		for (int n = 0; n < 4; ++n) {
 			DSP::Phasor<cmplx> osc;
 			osc.omega(-cfo_rad);
-			if (n > 0) {
-				value diff = sfo_rad * (rate / Const::TwoPi());
-				resample(tdom, buf, -diff, buffer_len);
-				symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
-				std::cerr << "resam pos: " << symbol_pos << std::endl;
-				for (int i = 0; i < buffer_len; ++i)
-					tdom[i] *= osc();
-			} else {
-				for (int i = 0; i < buffer_len; ++i)
-					tdom[i] = buf[i] * osc();
-			}
+			value diff = sfo_rad * (rate / Const::TwoPi());
+			resample(tdom, buf, -diff, buffer_len);
+			symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
+			std::cerr << "resam pos: " << symbol_pos << std::endl;
+			for (int i = 0; i < buffer_len; ++i)
+				tdom[i] *= osc();
 			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 			if (n > 0) {
 				int finer_pos = symbol_pos - pos_error(tail);
