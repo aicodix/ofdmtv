@@ -137,6 +137,7 @@ struct Decoder
 {
 	typedef DSP::Const<value> Const;
 	static const int symbol_len = (1280 * rate) / 8000;
+	static const int filter_len = (((21 * rate) / 8000) & ~3) | 1;
 	static const int guard_len = symbol_len / 8;
 	static const int img_off = 160;
 	static const int img_width = 320;
@@ -154,8 +155,8 @@ struct Decoder
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::BlockDC<value, value> blockdc;
-	DSP::Hilbert<cmplx, 129> hilbert;
-	DSP::Resampler<value, 129, 3> resample;
+	DSP::Hilbert<cmplx, filter_len> hilbert;
+	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
 	cmplx head[2 * symbol_len], tail[2 * symbol_len];
