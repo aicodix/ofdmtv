@@ -159,7 +159,7 @@ struct Decoder
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
 	cmplx head[2 * symbol_len], tail[2 * symbol_len];
-	cmplx fdom[2 * symbol_len], tdom[buffer_len];
+	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
 	value phase[2 * mls1_len], index[2 * mls1_len];
 	value cfo_rad, sfo_rad;
@@ -264,23 +264,26 @@ struct Decoder
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
-
-		for (int n = 0; n < 4; ++n) {
+		if (dis) {
 			value diff = sfo_rad * (rate / Const::TwoPi());
-			resample(tdom, buf, -diff, buffer_len);
+			resample(resam, buf, -diff, buffer_len);
 			symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
 			std::cerr << "resam pos: " << symbol_pos << std::endl;
-			if (n == 0) {
-				cmplx P;
-				for (int i = 0; i < symbol_len/2; ++i)
-					P += tdom[i+symbol_pos] * conj(tdom[i+symbol_pos+symbol_len/2]);
-				cfo_rad = correlator.cfo_rad + correlator.frac_cfo - arg(P) / value(symbol_len/2);
-				std::cerr << "resam cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
-			}
+			cmplx P;
+			for (int i = 0; i < symbol_len/2; ++i)
+				P += resam[i+symbol_pos] * conj(resam[i+symbol_pos+symbol_len/2]);
+			cfo_rad = correlator.cfo_rad + correlator.frac_cfo - arg(P) / value(symbol_len/2);
+			std::cerr << "resam cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
+		} else {
+			for (int i = 0; i < buffer_len; ++i)
+				resam[i] = buf[i];
+		}
+
+		for (int n = 0; n < 4; ++n) {
 			DSP::Phasor<cmplx> osc;
 			osc.omega(-cfo_rad);
 			for (int i = 0; i < buffer_len; ++i)
-				tdom[i] *= osc();
+				tdom[i] = resam[i] * osc();
 			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
 			int finer_pos = symbol_pos - pos_error(tail);
 			if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
