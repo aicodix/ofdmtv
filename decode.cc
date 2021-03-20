@@ -44,6 +44,7 @@ struct SchmidlCox
 public:
 	int symbol_pos = 0;
 	value cfo_rad = 0;
+	value frac_cfo = 0;
 
 	SchmidlCox(const cmplx *sequence) : threshold(value(0.17*guard_len), value(0.19*guard_len))
 	{
@@ -79,7 +80,7 @@ public:
 		if (!process)
 			return false;
 
-		value frac_cfo = phase_max / value(symbol_len);
+		frac_cfo = phase_max / value(symbol_len);
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
@@ -265,12 +266,19 @@ struct Decoder
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
 		for (int n = 0; n < 4; ++n) {
-			DSP::Phasor<cmplx> osc;
-			osc.omega(-cfo_rad);
 			value diff = sfo_rad * (rate / Const::TwoPi());
 			resample(tdom, buf, -diff, buffer_len);
 			symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
 			std::cerr << "resam pos: " << symbol_pos << std::endl;
+			if (n == 0) {
+				cmplx P;
+				for (int i = 0; i < symbol_len/2; ++i)
+					P += tdom[i+symbol_pos] * conj(tdom[i+symbol_pos+symbol_len/2]);
+				cfo_rad = correlator.cfo_rad + correlator.frac_cfo - arg(P) / value(symbol_len/2);
+				std::cerr << "resam cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
+			}
+			DSP::Phasor<cmplx> osc;
+			osc.omega(-cfo_rad);
 			for (int i = 0; i < buffer_len; ++i)
 				tdom[i] *= osc();
 			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
