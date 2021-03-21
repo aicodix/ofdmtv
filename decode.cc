@@ -298,19 +298,20 @@ struct Decoder
 			if (n > 1)
 				distance = (img_height+3)*(symbol_len+guard_len);
 			fwd(head, tdom+symbol_pos+(symbol_len+guard_len)-distance);
+			int length = 0;
 			for (int i = 0; i < mls1_len; ++i) {
-				phase[i] = arg(head[i+mls1_off] / tail[i+mls1_off]);
-				index[i] = i+mls1_off;
+				phase[length] = arg(head[i+mls1_off] / tail[i+mls1_off]);
+				index[length] = i+mls1_off;
+				++length;
 			}
-			int length = mls1_len;
 			if (1) {
-				length += mls1_len;
 				int head_pos = symbol_pos-(img_height+4)*(symbol_len+guard_len);
 				fwd(head+symbol_len, tdom+head_pos);
 				fwd(tail+symbol_len, tdom+head_pos+distance);
 				for (int i = 0; i < mls1_len; ++i) {
-					phase[i+mls1_len] = arg(head[i+mls1_off+symbol_len] / tail[i+mls1_off+symbol_len]);
-					index[i+mls1_len] = i+mls1_off;
+					phase[length] = arg(head[i+mls1_off+symbol_len] / tail[i+mls1_off+symbol_len]);
+					index[length] = i+mls1_off;
+					++length;
 				}
 			}
 
