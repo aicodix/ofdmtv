@@ -304,7 +304,7 @@ struct Decoder
 				index[length] = i+mls1_off;
 				++length;
 			}
-			if (1) {
+			if (n > 1) {
 				int head_pos = symbol_pos-(img_height+4)*(symbol_len+guard_len);
 				fwd(head+symbol_len, tdom+head_pos);
 				fwd(tail+symbol_len, tdom+head_pos+distance);
