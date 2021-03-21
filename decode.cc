@@ -142,7 +142,7 @@ struct Decoder
 	static const int img_off = 160;
 	static const int img_width = 320;
 	static const int img_height = 240;
-	static const int mls0_off = 192;
+	static const int mls0_off = 194;
 	static const int mls0_len = 127;
 	static const int mls0_poly = 0b10001001;
 	static const int mls1_off = img_off;

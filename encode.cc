@@ -106,7 +106,7 @@ struct Encoder
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off) : pcm(pcm)
 	{
 		mls1_off = img_off = (freq_off * symbol_len) / rate;
-		mls0_off = mls1_off + 32;
+		mls0_off = mls1_off + 34;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
