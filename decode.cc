@@ -139,10 +139,10 @@ struct Decoder
 	static const int symbol_len = (1280 * rate) / 8000;
 	static const int filter_len = (((21 * rate) / 8000) & ~3) | 1;
 	static const int guard_len = symbol_len / 8;
-	static const int img_off = 160;
+	static const int img_off = -160;
 	static const int img_width = 320;
 	static const int img_height = 240;
-	static const int mls0_off = 194;
+	static const int mls0_off = -126;
 	static const int mls0_len = 127;
 	static const int mls0_poly = 0b10001001;
 	static const int mls1_off = img_off;
@@ -202,17 +202,17 @@ struct Decoder
 		for (int i = 0; i < symbol_len/2; ++i)
 			fdom[i] = 0;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[i+mls0_off/2] = 1 - 2 * seq0();
+			fdom[(i+mls0_off/2+symbol_len/2)%(symbol_len/2)] = 1 - 2 * seq0();
 		return fdom;
 	}
 	int pos_error(const cmplx *symbol)
 	{
 		value avg = 0;
 		for (int i = 1; i < mls1_len; ++i)
-			if ((symbol[i+mls1_off] / symbol[i-1+mls1_off]).real() >= 0)
-				avg += phase[i] = arg(symbol[i+mls1_off] / symbol[i-1+mls1_off]);
+			if ((symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]).real() >= 0)
+				avg += phase[i] = arg(symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]);
 			else
-				avg += phase[i] = arg(- symbol[i+mls1_off] / symbol[i-1+mls1_off]);
+				avg += phase[i] = arg(- symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]);
 		avg /= value(mls1_len-1);
 		value var = 0;
 		for (int i = 1; i < mls1_len; ++i)
@@ -300,7 +300,7 @@ struct Decoder
 			fwd(head, tdom+symbol_pos+(symbol_len+guard_len)-distance);
 			int length = 0;
 			for (int i = 0; i < mls1_len; ++i) {
-				phase[length] = arg(head[i+mls1_off] / tail[i+mls1_off]);
+				phase[length] = arg(head[(i+mls1_off+symbol_len)%symbol_len] / tail[(i+mls1_off+symbol_len)%symbol_len]);
 				index[length] = i+mls1_off;
 				++length;
 			}
@@ -309,7 +309,7 @@ struct Decoder
 				fwd(head+symbol_len, tdom+head_pos);
 				fwd(tail+symbol_len, tdom+head_pos+distance);
 				for (int i = 0; i < mls1_len; ++i) {
-					phase[length] = arg(head[i+mls1_off+symbol_len] / tail[i+mls1_off+symbol_len]);
+					phase[length] = arg(head[(i+mls1_off+symbol_len)%symbol_len+symbol_len] / tail[(i+mls1_off+symbol_len)%symbol_len+symbol_len]);
 					index[length] = i+mls1_off;
 					++length;
 				}
@@ -342,23 +342,23 @@ struct Decoder
 		}
 		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		for (int i = 0; i < mls1_len; ++i)
-			head[i+mls1_off] *= (1 - 2 * seq1());
+			head[(i+mls1_off+symbol_len)%symbol_len] *= (1 - 2 * seq1());
 		seq1.reset();
 		for (int i = 0; i < mls1_len; ++i)
-			tail[i+mls1_off] *= (1 - 2 * seq1());
+			tail[(i+mls1_off+symbol_len)%symbol_len] *= (1 - 2 * seq1());
 		for (int j = 0; j < img_height; j += 2) {
 			for (int k = 0; k < 2; ++k) {
 				fwd(fdom+symbol_len*k, tdom+symbol_pos+(j+k-img_height-1)*(symbol_len+guard_len));
 				value x = value(j+k+1) / value(img_height+3);
 				for (int i = 0; i < img_width; ++i)
-					fdom[i+img_off+symbol_len*k] /= DSP::lerp(x, head[i+img_off], tail[i+img_off]);
+					fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k] /= DSP::lerp(x, head[(i+img_off+symbol_len)%symbol_len], tail[(i+img_off+symbol_len)%symbol_len]);
 				for (int i = 0; i < img_width; ++i)
-					fdom[i+img_off+symbol_len*k] = cmplx(
-						fdom[i+img_off+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[i+img_off+symbol_len*k].imag() * (1 - 2 * seq3()));
+					fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k] = cmplx(
+						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].imag() * (1 - 2 * seq3()));
 			}
 			for (int i = 0; i < img_width; i += 2)
-				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+i+img_off, fdom+i+img_off+symbol_len);
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+(i+img_off+symbol_len)%symbol_len, fdom+(i+img_off+symbol_len)%symbol_len+symbol_len);
 			pel->write(rgb_line, 2 * img_width);
 		}
 	}
