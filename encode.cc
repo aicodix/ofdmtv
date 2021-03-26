@@ -105,46 +105,39 @@ struct Encoder
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off) : pcm(pcm)
 	{
-		mls1_off = img_off = (freq_off * symbol_len) / rate;
+		mls1_off = img_off = (freq_off * symbol_len) / rate - img_width / 2;
 		mls0_off = mls1_off + 34;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
-		int count = 0;
 		for (int i = 0; i < frame_width; ++i) {
-			if (i+mls1_off-frame_width >= 0) {
-				fdom[i+mls1_off-frame_width] = 1;
-				++count;
-			}
-			if (i+mls1_off+mls1_len < symbol_len) {
-				fdom[i+mls1_off+mls1_len] = 1;
-				++count;
-			}
+			fdom[(i+mls1_off-frame_width+symbol_len)%symbol_len] = 1;
+			fdom[(i+mls1_off+mls1_len+symbol_len)%symbol_len] = 1;
 		}
 		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] /= value(10 * count);
+			fdom[i] /= value(10 * 2 * frame_width);
 		bwd(kern, fdom);
 		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] = mls1_fac * (1 - 2 * seq1());
+			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		value mls0_fac = sqrt(value(symbol_len) / value(4 * mls0_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
-		fdom[mls0_off-2] = mls0_fac;
+		fdom[(mls0_off-2+symbol_len)%symbol_len] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] = - (1 - 2 * seq0());
+			fdom[(2*i+mls0_off+symbol_len)%symbol_len] = - (1 - 2 * seq0());
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] *= fdom[2*(i-1)+mls0_off];
+			fdom[(2*i+mls0_off+symbol_len)%symbol_len] *= fdom[(2*(i-1)+mls0_off+symbol_len)%symbol_len];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] = mls1_fac * (1 - 2 * seq1());
+			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
@@ -152,12 +145,12 @@ struct Encoder
 		for (int j = 0; j < img_height; j += 2) {
 			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0; i < img_width; i += 2)
-				rgb_to_cmplx(fdom+i+img_off, fdom+i+img_off+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+				rgb_to_cmplx(fdom+(i+img_off+symbol_len)%symbol_len, fdom+(i+img_off+symbol_len)%symbol_len+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0; i < img_width; ++i)
-					fdom[i+img_off] = img_fac * cmplx(
-						fdom[i+img_off+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[i+img_off+symbol_len*k].imag() * (1 - 2 * seq3()));
+					fdom[(i+img_off+symbol_len)%symbol_len] = img_fac * cmplx(
+						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].imag() * (1 - 2 * seq3()));
 				symbol();
 			}
 		}
@@ -165,22 +158,22 @@ struct Encoder
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] = mls1_fac * (1 - 2 * seq1());
+			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq0.reset();
-		fdom[mls0_off-2] = mls0_fac;
+		fdom[(mls0_off-2+symbol_len)%symbol_len] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] = 1 - 2 * seq0();
+			fdom[(2*i+mls0_off+symbol_len)%symbol_len] = 1 - 2 * seq0();
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[2*i+mls0_off] *= fdom[2*(i-1)+mls0_off];
+			fdom[(2*i+mls0_off+symbol_len)%symbol_len] *= fdom[(2*(i-1)+mls0_off+symbol_len)%symbol_len];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[i] = mls1_fac * (1 - 2 * seq1());
+			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -204,11 +197,11 @@ int main(int argc, char **argv)
 	int output_chan = std::atoi(argv[4]);
 	const char *picture_name = argv[5];
 
-	int freq_off = 1000;
+	int freq_off = output_chan == 1 ? 2000 : 0;
 	if (argc == 7)
 		freq_off = std::atoi(argv[6]);
 
-	if (freq_off < 0 || freq_off > 2000) {
+	if ((output_chan == 1 && freq_off < 1200) || freq_off < 1200 - output_rate / 2 || freq_off > output_rate / 2 - 1200) {
 		std::cerr << "Unsupported frequency offset." << std::endl;
 		return 1;
 	}
