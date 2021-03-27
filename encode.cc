@@ -41,6 +41,10 @@ struct Encoder
 	int mls0_off;
 	int mls1_off;
 
+	static int bin(int carrier)
+	{
+		return (carrier + symbol_len) % symbol_len;
+	}
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
 		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.493), VMAX(0.877);
@@ -111,8 +115,8 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int i = 0; i < frame_width; ++i) {
-			fdom[(i+mls1_off-frame_width+symbol_len)%symbol_len] = 1;
-			fdom[(i+mls1_off+mls1_len+symbol_len)%symbol_len] = 1;
+			fdom[bin(i+mls1_off-frame_width)] = 1;
+			fdom[bin(i+mls1_off+mls1_len)] = 1;
 		}
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] /= value(10 * 2 * frame_width);
@@ -122,22 +126,22 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
+			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		value mls0_fac = sqrt(value(symbol_len) / value(4 * mls0_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
-		fdom[(mls0_off-2+symbol_len)%symbol_len] = mls0_fac;
+		fdom[bin(mls0_off-2)] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[(2*i+mls0_off+symbol_len)%symbol_len] = - (1 - 2 * seq0());
+			fdom[bin(2*i+mls0_off)] = - (1 - 2 * seq0());
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[(2*i+mls0_off+symbol_len)%symbol_len] *= fdom[(2*(i-1)+mls0_off+symbol_len)%symbol_len];
+			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
+			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
@@ -145,12 +149,12 @@ struct Encoder
 		for (int j = 0; j < img_height; j += 2) {
 			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0; i < img_width; i += 2)
-				rgb_to_cmplx(fdom+(i+img_off+symbol_len)%symbol_len, fdom+(i+img_off+symbol_len)%symbol_len+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+				rgb_to_cmplx(fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0; i < img_width; ++i)
-					fdom[(i+img_off+symbol_len)%symbol_len] = img_fac * cmplx(
-						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].imag() * (1 - 2 * seq3()));
+					fdom[bin(i+img_off)] = img_fac * cmplx(
+						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[bin(i+img_off)+symbol_len*k].imag() * (1 - 2 * seq3()));
 				symbol();
 			}
 		}
@@ -158,22 +162,22 @@ struct Encoder
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
+			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq0.reset();
-		fdom[(mls0_off-2+symbol_len)%symbol_len] = mls0_fac;
+		fdom[bin(mls0_off-2)] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[(2*i+mls0_off+symbol_len)%symbol_len] = 1 - 2 * seq0();
+			fdom[bin(2*i+mls0_off)] = 1 - 2 * seq0();
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[(2*i+mls0_off+symbol_len)%symbol_len] *= fdom[(2*(i-1)+mls0_off+symbol_len)%symbol_len];
+			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol(false);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq1.reset();
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[(i+symbol_len)%symbol_len] = mls1_fac * (1 - 2 * seq1());
+			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
 		symbol();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;

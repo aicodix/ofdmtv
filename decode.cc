@@ -41,6 +41,11 @@ struct SchmidlCox
 	value timing_max = 0;
 	value phase_max = 0;
 	int index_max = 0;
+
+	static int bin(int carrier)
+	{
+		return (carrier + symbol_len) % symbol_len;
+	}
 public:
 	int symbol_pos = 0;
 	value cfo_rad = 0;
@@ -98,9 +103,9 @@ public:
 			tmp1[i] = 0;
 		for (int i = 0; i < symbol_len; ++i)
 			if (norm(tmp0[i]) * 1000 > avg_pwr && norm(tmp0[i]) < avg_pwr * 1000 &&
-				std::min(norm(tmp0[i]), norm(tmp0[(i-1+symbol_len)%symbol_len])) * 2 >
-				std::max(norm(tmp0[i]), norm(tmp0[(i-1+symbol_len)%symbol_len])))
-					tmp1[i] = tmp0[i] / tmp0[(i-1+symbol_len)%symbol_len];
+				std::min(norm(tmp0[i]), norm(tmp0[bin(i-1)])) * 2 >
+				std::max(norm(tmp0[i]), norm(tmp0[bin(i-1)])))
+					tmp1[i] = tmp0[i] / tmp0[bin(i-1)];
 		fwd(tmp0, tmp1);
 		for (int i = 0; i < symbol_len; ++i)
 			tmp0[i] *= kern[i];
@@ -166,6 +171,10 @@ struct Decoder
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
+	static int bin(int carrier)
+	{
+		return (carrier + symbol_len) % symbol_len;
+	}
 	void yuv_to_rgb(value *rgb, const value *yuv)
 	{
 		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.493), VMAX(0.877);
@@ -209,10 +218,10 @@ struct Decoder
 	{
 		value avg = 0;
 		for (int i = 1; i < mls1_len; ++i)
-			if ((symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]).real() >= 0)
-				avg += phase[i] = arg(symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]);
+			if ((symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]).real() >= 0)
+				avg += phase[i] = arg(symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]);
 			else
-				avg += phase[i] = arg(- symbol[(i+mls1_off+symbol_len)%symbol_len] / symbol[(i-1+mls1_off+symbol_len)%symbol_len]);
+				avg += phase[i] = arg(- symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]);
 		avg /= value(mls1_len-1);
 		value var = 0;
 		for (int i = 1; i < mls1_len; ++i)
@@ -300,7 +309,7 @@ struct Decoder
 			fwd(head, tdom+symbol_pos+(symbol_len+guard_len)-distance);
 			int length = 0;
 			for (int i = 0; i < mls1_len; ++i) {
-				phase[length] = arg(head[(i+mls1_off+symbol_len)%symbol_len] / tail[(i+mls1_off+symbol_len)%symbol_len]);
+				phase[length] = arg(head[bin(i+mls1_off)] / tail[bin(i+mls1_off)]);
 				index[length] = i+mls1_off;
 				++length;
 			}
@@ -309,7 +318,7 @@ struct Decoder
 				fwd(head+symbol_len, tdom+head_pos);
 				fwd(tail+symbol_len, tdom+head_pos+distance);
 				for (int i = 0; i < mls1_len; ++i) {
-					phase[length] = arg(head[(i+mls1_off+symbol_len)%symbol_len+symbol_len] / tail[(i+mls1_off+symbol_len)%symbol_len+symbol_len]);
+					phase[length] = arg(head[bin(i+mls1_off)+symbol_len] / tail[bin(i+mls1_off)+symbol_len]);
 					index[length] = i+mls1_off;
 					++length;
 				}
@@ -340,23 +349,23 @@ struct Decoder
 		}
 		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		for (int i = 0; i < mls1_len; ++i)
-			head[(i+mls1_off+symbol_len)%symbol_len] *= (1 - 2 * seq1());
+			head[bin(i+mls1_off)] *= (1 - 2 * seq1());
 		seq1.reset();
 		for (int i = 0; i < mls1_len; ++i)
-			tail[(i+mls1_off+symbol_len)%symbol_len] *= (1 - 2 * seq1());
+			tail[bin(i+mls1_off)] *= (1 - 2 * seq1());
 		for (int j = 0; j < img_height; j += 2) {
 			for (int k = 0; k < 2; ++k) {
 				fwd(fdom+symbol_len*k, tdom+symbol_pos+(j+k-img_height-1)*(symbol_len+guard_len));
 				value x = value(j+k+1) / value(img_height+3);
 				for (int i = 0; i < img_width; ++i)
-					fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k] /= DSP::lerp(x, head[(i+img_off+symbol_len)%symbol_len], tail[(i+img_off+symbol_len)%symbol_len]);
+					fdom[bin(i+img_off)+symbol_len*k] /= DSP::lerp(x, head[bin(i+img_off)], tail[bin(i+img_off)]);
 				for (int i = 0; i < img_width; ++i)
-					fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k] = cmplx(
-						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[(i+img_off+symbol_len)%symbol_len+symbol_len*k].imag() * (1 - 2 * seq3()));
+					fdom[bin(i+img_off)+symbol_len*k] = cmplx(
+						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
+						fdom[bin(i+img_off)+symbol_len*k].imag() * (1 - 2 * seq3()));
 			}
 			for (int i = 0; i < img_width; i += 2)
-				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+(i+img_off+symbol_len)%symbol_len, fdom+(i+img_off+symbol_len)%symbol_len+symbol_len);
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len);
 			pel->write(rgb_line, 2 * img_width);
 		}
 	}
