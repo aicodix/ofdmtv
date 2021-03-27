@@ -27,12 +27,14 @@ template <typename value, typename cmplx, int buffer_len, int symbol_len, int gu
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
+	static const int match_len = guard_len | 1;
+	static const int match_del = (match_len - 1) / 2;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::SMA4<cmplx, value, symbol_len, false> cor;
 	DSP::SMA4<value, value, symbol_len, false> pwr;
-	DSP::SMA4<value, value, guard_len, false> match;
-	DSP::Delay<value, guard_len/2> delay;
+	DSP::SMA4<value, value, match_len, false> match;
+	DSP::Delay<value, match_del> delay;
 	DSP::SchmittTrigger<value> threshold;
 	DSP::FallingEdgeTrigger falling;
 	cmplx tmp0[symbol_len], tmp1[symbol_len], tmp2[symbol_len];
@@ -51,7 +53,7 @@ public:
 	value cfo_rad = 0;
 	value frac_cfo = 0;
 
-	SchmidlCox(const cmplx *sequence) : threshold(value(0.17*guard_len), value(0.19*guard_len))
+	SchmidlCox(const cmplx *sequence) : threshold(value(0.17*match_len), value(0.19*match_len))
 	{
 		for (int i = 0; i < symbol_len; ++i)
 			seq[i] = sequence[i];
@@ -77,7 +79,7 @@ public:
 		if (timing_max < timing) {
 			timing_max = timing;
 			phase_max = phase;
-			index_max = guard_len / 2;
+			index_max = match_del;
 		} else if (index_max < 3*symbol_len) {
 			++index_max;
 		}
