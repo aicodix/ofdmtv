@@ -32,7 +32,7 @@ struct SchmidlCox
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::SMA4<cmplx, value, symbol_len, false> cor;
-	DSP::SMA4<value, value, symbol_len, false> pwr;
+	DSP::SMA4<value, value, 2*symbol_len, false> pwr;
 	DSP::SMA4<value, value, match_len, false> match;
 	DSP::Delay<value, match_del> delay;
 	DSP::SchmittTrigger<value> threshold;
@@ -64,7 +64,7 @@ public:
 	bool operator()(const cmplx *samples)
 	{
 		cmplx P = cor(samples[buffer_len-5*symbol_len] * conj(samples[buffer_len-4*symbol_len]));
-		value R = pwr(norm(samples[buffer_len-4*symbol_len]));
+		value R = value(0.5) * pwr(norm(samples[buffer_len-4*symbol_len]));
 		value min_R = 0.0001 * symbol_len;
 		R = std::max(R, min_R);
 		value timing = match(norm(P) / (R * R));
