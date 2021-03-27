@@ -43,3 +43,10 @@ Encode [smpte.ppm](smpte.ppm) to [analytic](https://en.wikipedia.org/wiki/Analyt
 ./encode ping.wav 8000 16 2 smpte.ppm && ../disorders/multipath pong.wav ping.wav ../disorders/multipath.txt 10 && ../disorders/awgn ping.wav pong.wav -50 && ../disorders/cfo pong.wav ping.wav 234.567 && ../disorders/sfo ping.wav pong.wav 40 && ./decode decoded.ppm ping.wav && feh decoded.ppm smpte.ppm
 ```
 
+### Reading
+
+* Robust frequency and timing synchronization for OFDM  
+by Timothy M. Schmidl and Donald C. Cox - 1997
+* On Timing Offset Estimation for OFDM Systems  
+by H. Minn, M. Zeng, and V. K. Bhargava - 2000
+
