@@ -169,7 +169,7 @@ struct Decoder
 	cmplx head[2 * symbol_len], tail[2 * symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
-	value phase[2 * mls1_len], index[2 * mls1_len];
+	value phase[symbol_len/2], index[2 * mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -254,6 +254,26 @@ struct Decoder
 			idx -= symbol_len;
 		return -idx;
 	}
+	value frac_cfo(const cmplx *samples)
+	{
+		value avg = 0;
+		for (int i = 0; i < symbol_len/2; ++i)
+			avg += phase[i] = arg(samples[i] * conj(samples[i+symbol_len/2]));
+		avg /= value(symbol_len/2);
+		value var = 0;
+		for (int i = 0; i < symbol_len/2; ++i)
+			var += (phase[i] - avg) * (phase[i] - avg);
+		value std_dev = std::sqrt(var/(symbol_len/2-1));
+		int count = 0;
+		value sum = 0;
+		for (int i = 0; i < symbol_len/2; ++i) {
+			if (2 * std::abs(phase[i] - avg) <= std_dev) {
+				sum += phase[i];
+				++count;
+			}
+		}
+		return sum / (count * symbol_len/2);
+	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
 	{
 		bool real = pcm->channels() == 1;
@@ -281,15 +301,12 @@ struct Decoder
 			resample(resam, buf, -diff, buffer_len);
 			symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
 			std::cerr << "resam pos: " << symbol_pos << std::endl;
-			cmplx P;
-			for (int i = 0; i < symbol_len/2; ++i)
-				P += resam[i+symbol_pos] * conj(resam[i+symbol_pos+symbol_len/2]);
-			cfo_rad = correlator.cfo_rad + correlator.frac_cfo - arg(P) / value(symbol_len/2);
-			std::cerr << "resam cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 		} else {
 			for (int i = 0; i < buffer_len; ++i)
 				resam[i] = buf[i];
 		}
+		cfo_rad = correlator.cfo_rad + correlator.frac_cfo - frac_cfo(resam+symbol_pos);
+		std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
 		for (int n = 0; n < 4; ++n) {
 			DSP::Phasor<cmplx> osc;
