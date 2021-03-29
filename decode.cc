@@ -9,6 +9,7 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; }
 #include "bip_buffer.hh"
 #include "regression.hh"
+#include "theil_sen.hh"
 #include "resampler.hh"
 #include "trigger.hh"
 #include "complex.hh"
@@ -165,6 +166,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, filter_len> hilbert;
 	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
+	DSP::TheilSenEstimator<value, 2 * mls1_len> tse;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
 	cmplx head[2 * symbol_len], tail[2 * symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
@@ -343,7 +345,18 @@ struct Decoder
 				}
 			}
 
+			int peek = 1;
+			for (int i = 0; n==peek && i < length; ++i)
+				std::cout << index[i] << " " << phase[i] << " NaN NaN NaN NaN" << std::endl;
+
+			tse.compute(index, phase, length);
+			//std::cerr << "Theil-Sen slope = " << tse.slope() << std::endl;
+			//std::cerr << "Theil-Sen yint = " << tse.yint() << std::endl;
+
 			DSP::SimpleLinearRegression<value> dirty(index, phase, length);
+			//std::cerr << "dirty slope = " << dirty.slope() << std::endl;
+			//std::cerr << "dirty yint = " << dirty.yint() << std::endl;
+
 			value avg_diff = 0;
 			for (int i = 0; i < length; ++i)
 				avg_diff += dirty(index[i]) - phase[i];
@@ -360,9 +373,24 @@ struct Decoder
 					++count;
 				}
 			}
+
+			for (int i = 0; n==peek && i < count; ++i)
+				std::cout << index[i] << " NaN " << phase[i] << " NaN NaN NaN" << std::endl;
+
 			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
-			value finer_sfo = sfo_rad + sfo_cfo.slope() * symbol_len / value(distance);
-			cfo_rad -= sfo_cfo.yint() / value(distance);
+
+			for (int i = mls1_off; n==peek && i < mls1_off + mls1_len; i += mls1_len-1)
+				std::cout << i << " NaN NaN " << tse(i) << " " << dirty(i) << " " << sfo_cfo(i) << std::endl;
+
+			// set yrange [-3.5:3.5]
+			// plot "<./decode decoded.ppm recorded6.wav | tee blah.txt" u 1:2 w p t "data", "blah.txt" u 1:3 w p t "pruned data", "blah.txt" u 1:4 w l t "Theil-Sen estimator", "blah.txt" u 1:5 w l t "Simple Linear Regression", "blah.txt" u 1:6 w l t "SLR of pruned data"
+
+			//std::cerr << "sfo_cfo slope = " << sfo_cfo.slope() << std::endl;
+			//std::cerr << "sfo_cfo yint = " << sfo_cfo.yint() << std::endl;
+			//value finer_sfo = sfo_rad + sfo_cfo.slope() * symbol_len / value(distance);
+			value finer_sfo = sfo_rad + tse.slope() * symbol_len / value(distance);
+			//cfo_rad -= sfo_cfo.yint() / value(distance);
+			cfo_rad -= tse.yint() / value(distance);
 			std::cerr << "finer sfo: " << 1000000 * finer_sfo / Const::TwoPi() << " ppm" << std::endl;
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 		}
