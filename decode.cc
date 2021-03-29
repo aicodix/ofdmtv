@@ -232,7 +232,7 @@ struct Decoder
 		int count = 0;
 		value sum = 0;
 		for (int i = 1; i < mls1_len; ++i) {
-			if (2 * std::abs(phase[i] - avg) <= std_dev) {
+			if (std::abs(phase[i] - avg) <= std_dev) {
 				sum += phase[i];
 				++count;
 			}
@@ -267,7 +267,7 @@ struct Decoder
 		int count = 0;
 		value sum = 0;
 		for (int i = 0; i < symbol_len/2; ++i) {
-			if (2 * std::abs(phase[i] - avg) <= std_dev) {
+			if (std::abs(phase[i] - avg) <= std_dev) {
 				sum += phase[i];
 				++count;
 			}
@@ -354,7 +354,7 @@ struct Decoder
 			value std_dev = std::sqrt(var_diff/(length-1));
 			int count = 0;
 			for (int i = 0; i < length; ++i) {
-				if (2 * std::abs(dirty(index[i])-phase[i]) < std_dev) {
+				if (std::abs(dirty(index[i])-phase[i]) <= std_dev) {
 					index[count] = index[i];
 					phase[count] = phase[i];
 					++count;
