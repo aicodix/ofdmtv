@@ -107,6 +107,16 @@ struct Encoder
 		for (int i = 0; i < guard_len; ++i)
 			guard[i] = tdom[i];
 	}
+	void pilot_block()
+	{
+		CODE::MLS seq1(mls1_poly);
+		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] = 0;
+		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
+			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
+		symbol();
+	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off) : pcm(pcm)
 	{
 		mls1_off = img_off = (freq_off * symbol_len) / rate - img_width / 2;
@@ -121,13 +131,8 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] /= value(10 * 2 * frame_width);
 		bwd(kern, fdom);
-		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
-		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
-		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] = 0;
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
-		symbol();
+		CODE::MLS seq0(mls0_poly), seq2(mls2_poly), seq3(mls3_poly);
+		pilot_block();
 		value mls0_fac = sqrt(value(symbol_len) / value(4 * mls0_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -137,12 +142,7 @@ struct Encoder
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol(false);
-		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] = 0;
-		seq1.reset();
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
-		symbol();
+		pilot_block();
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -158,12 +158,7 @@ struct Encoder
 				symbol();
 			}
 		}
-		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] = 0;
-		seq1.reset();
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
-		symbol();
+		pilot_block();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		seq0.reset();
@@ -173,12 +168,7 @@ struct Encoder
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol(false);
-		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] = 0;
-		seq1.reset();
-		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
-		symbol();
+		pilot_block();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		symbol();
