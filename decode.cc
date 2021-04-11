@@ -8,7 +8,6 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 #include <cmath>
 namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; }
 #include "bip_buffer.hh"
-#include "regression.hh"
 #include "resampler.hh"
 #include "trigger.hh"
 #include "complex.hh"
@@ -157,7 +156,7 @@ struct Decoder
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
 	static const int mls3_poly = 0b10111010010000001;
-	static const int buffer_len = (7 + img_height) * (symbol_len + guard_len);
+	static const int buffer_len = (36 + img_height) * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
@@ -166,10 +165,10 @@ struct Decoder
 	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
-	cmplx head[2 * symbol_len], tail[2 * symbol_len];
+	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
-	value phase[symbol_len/2], index[2 * mls1_len];
+	value phase[symbol_len/2];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -291,8 +290,8 @@ struct Decoder
 
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
-		int dis = displacement(buf+symbol_pos-(img_height+2)*(symbol_len+guard_len), buf+symbol_pos+(symbol_len+guard_len));
-		sfo_rad = (dis * Const::TwoPi()) / ((img_height+3)*(symbol_len+guard_len));
+		int dis = displacement(buf+symbol_pos-(img_height+31)*(symbol_len+guard_len), buf+symbol_pos+(symbol_len+guard_len));
+		sfo_rad = (dis * Const::TwoPi()) / ((img_height+32)*(symbol_len+guard_len));
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
 		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
@@ -308,74 +307,86 @@ struct Decoder
 		cfo_rad = correlator.cfo_rad + correlator.frac_cfo - frac_cfo(resam+symbol_pos);
 		std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
-		for (int n = 0; n < 4; ++n) {
-			DSP::Phasor<cmplx> osc;
+		DSP::Phasor<cmplx> osc;
+		osc.omega(-cfo_rad);
+		for (int i = 0; i < buffer_len; ++i)
+			tdom[i] = resam[i] * osc();
+		if (1) {
+			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+			int finer_pos = symbol_pos - pos_error(tail);
+			if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
+				symbol_pos = finer_pos;
+				std::cerr << "finer pos: " << symbol_pos << std::endl;
+			}
+		}
+		if (1) {
+			fwd(head, tdom+symbol_pos-(symbol_len+guard_len));
+			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+			int distance = 2;
+			int length = 0;
+			value sum = 0;
+			for (int i = 0; i < mls1_len; ++i)
+				sum += phase[length++] = arg(head[bin(i+mls1_off)] / tail[bin(i+mls1_off)]);
+			value avg = sum / length;
+			if (1) {
+				value var = 0;
+				for (int i = 0; i < length; ++i)
+					var += (phase[i] - avg) * (phase[i] - avg);
+				value std_dev = std::sqrt(var/(length-1));
+				int count = 0;
+				sum = 0;
+				for (int i = 0; i < length; ++i) {
+					if (std::abs(phase[i] - avg) <= std_dev) {
+						sum += phase[i];
+						++count;
+					}
+				}
+				avg = sum / count;
+			}
+			cfo_rad -= avg / value(distance*(symbol_len+guard_len));
+			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
 			osc.omega(-cfo_rad);
 			for (int i = 0; i < buffer_len; ++i)
 				tdom[i] = resam[i] * osc();
-			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
-			if (1) {
-				int finer_pos = symbol_pos - pos_error(tail);
-				if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
-					symbol_pos = finer_pos;
-					fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
-					std::cerr << "finer pos: " << symbol_pos << std::endl;
-				}
-			}
-			int distance = 2*(symbol_len+guard_len);
-			if (n > 1)
-				distance = (img_height+3)*(symbol_len+guard_len);
-			fwd(head, tdom+symbol_pos+(symbol_len+guard_len)-distance);
-			int length = 0;
-			for (int i = 0; i < mls1_len; ++i) {
-				phase[length] = arg(head[bin(i+mls1_off)] / tail[bin(i+mls1_off)]);
-				index[length] = i+mls1_off;
-				++length;
-			}
-			if (n > 1) {
-				int head_pos = symbol_pos-(img_height+4)*(symbol_len+guard_len);
-				fwd(head+symbol_len, tdom+head_pos);
-				fwd(tail+symbol_len, tdom+head_pos+distance);
-				for (int i = 0; i < mls1_len; ++i) {
-					phase[length] = arg(head[bin(i+mls1_off)+symbol_len] / tail[bin(i+mls1_off)+symbol_len]);
-					index[length] = i+mls1_off;
-					++length;
-				}
-			}
-
-			DSP::SimpleLinearRegression<value> dirty(index, phase, length);
-			value avg_diff = 0;
-			for (int i = 0; i < length; ++i)
-				avg_diff += dirty(index[i]) - phase[i];
-			avg_diff /= value(length);
-			value var_diff = 0;
-			for (int i = 0; i < length; ++i)
-				var_diff += (dirty(index[i]) - phase[i] - avg_diff) * (dirty(index[i]) - phase[i] - avg_diff);
-			value std_dev = std::sqrt(var_diff/(length-1));
+		}
+		if (1) {
+			int distance = 9;
 			int count = 0;
-			for (int i = 0; i < length; ++i) {
-				if (std::abs(dirty(index[i])-phase[i]) <= std_dev) {
-					index[count] = index[i];
-					phase[count] = phase[i];
-					++count;
-				}
+			value sum = 0;
+			fwd(head, tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len));
+			for (int j = 1; j < 31; ++j) {
+				fwd(tail, tdom+symbol_pos-(img_height+31-j*distance)*(symbol_len+guard_len));
+				for (int i = 0; i < img_width; ++i, ++count)
+					sum += arg(head[bin(i+img_off)] / tail[bin(i+img_off)]);
+				for (int i = 0; i < symbol_len; ++i)
+					head[i] = tail[i];
 			}
-			DSP::SimpleLinearRegression<value> sfo_cfo(index, phase, count);
-			value finer_sfo = sfo_rad + sfo_cfo.slope() * symbol_len / value(distance);
-			cfo_rad -= sfo_cfo.yint() / value(distance);
-			std::cerr << "finer sfo: " << 1000000 * finer_sfo / Const::TwoPi() << " ppm" << std::endl;
+			value avg = sum / count;
+			cfo_rad -= avg / value(distance*(symbol_len+guard_len));
 			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
+			osc.omega(-cfo_rad);
+			for (int i = 0; i < buffer_len; ++i)
+				tdom[i] = resam[i] * osc();
 		}
 		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
-		for (int i = 0; i < mls1_len; ++i)
-			head[bin(i+mls1_off)] *= (1 - 2 * seq1());
-		seq1.reset();
+		fwd(tail, tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len));
 		for (int i = 0; i < mls1_len; ++i)
 			tail[bin(i+mls1_off)] *= (1 - 2 * seq1());
+		cmplx *cur = tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len);
 		for (int j = 0; j < img_height; j += 2) {
+			if (j%8==0) {
+				for (int i = 0; i < symbol_len; ++i)
+					head[i] = tail[i];
+				fwd(tail, cur+9*(symbol_len+guard_len));
+				cur += (symbol_len+guard_len);
+				seq1.reset();
+				for (int i = 0; i < mls1_len; ++i)
+					tail[bin(i+mls1_off)] *= (1 - 2 * seq1());
+			}
 			for (int k = 0; k < 2; ++k) {
-				fwd(fdom+symbol_len*k, tdom+symbol_pos+(j+k-img_height-1)*(symbol_len+guard_len));
-				value x = value(j+k+1) / value(img_height+3);
+				fwd(fdom+symbol_len*k, cur);
+				cur += (symbol_len+guard_len);
+				value x = value((j+k)%8+1) / value(9);
 				for (int i = 0; i < img_width; ++i)
 					fdom[bin(i+img_off)+symbol_len*k] /= DSP::lerp(x, head[bin(i+img_off)], tail[bin(i+img_off)]);
 				for (int i = 0; i < img_width; ++i)

@@ -142,11 +142,12 @@ struct Encoder
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol(false);
-		pilot_block();
 		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int j = 0; j < img_height; j += 2) {
+			if (j%8 == 0)
+				pilot_block();
 			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0; i < img_width; i += 2)
 				rgb_to_cmplx(fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
