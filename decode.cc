@@ -125,7 +125,7 @@ public:
 				next = power;
 			}
 		}
-		if (peak <= next * 8)
+		if (peak <= next * 4)
 			return false;
 
 		if (abs(arg(tmp2[shift])) >= Const::FourthPi())
