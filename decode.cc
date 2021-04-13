@@ -5,6 +5,7 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 */
 
 #include <iostream>
+#include <cassert>
 #include <cmath>
 namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; }
 #include "bip_buffer.hh"
@@ -21,6 +22,9 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "pcm.hh"
 #include "fft.hh"
 #include "mls.hh"
+#include "crc.hh"
+#include "galois_field.hh"
+#include "bose_chaudhuri_hocquenghem_decoder.hh"
 
 template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
 struct SchmidlCox
@@ -62,8 +66,8 @@ public:
 	}
 	bool operator()(const cmplx *samples)
 	{
-		cmplx P = cor(samples[buffer_len-5*symbol_len] * conj(samples[buffer_len-4*symbol_len]));
-		value R = value(0.5) * pwr(norm(samples[buffer_len-4*symbol_len]));
+		cmplx P = cor(samples[buffer_len-7*symbol_len] * conj(samples[buffer_len-6*symbol_len]));
+		value R = value(0.5) * pwr(norm(samples[buffer_len-6*symbol_len]));
 		value min_R = 0.0001 * symbol_len;
 		R = std::max(R, min_R);
 		value timing = match(norm(P) / (R * R));
@@ -90,7 +94,7 @@ public:
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
-		symbol_pos = buffer_len - 6*symbol_len - index_max;
+		symbol_pos = buffer_len - 8*symbol_len - index_max;
 		index_max = 0;
 		timing_max = 0;
 		for (int i = 0; i < symbol_len; ++i)
@@ -138,6 +142,12 @@ public:
 	}
 };
 
+void base37_decoder(char *str, long long int val, int len)
+{
+	for (int i = len-1; i >= 0; --i, val /= 37)
+		str[i] = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[val%37];
+}
+
 template <typename value, typename cmplx, int rate>
 struct Decoder
 {
@@ -156,7 +166,10 @@ struct Decoder
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
 	static const int mls3_poly = 0b10111010010000001;
-	static const int buffer_len = (36 + img_height) * (symbol_len + guard_len);
+	static const int mls4_len = 255;
+	static const int mls4_off = -127;
+	static const int mls4_poly = 0b100101011;
+	static const int buffer_len = (38 + img_height) * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
@@ -165,6 +178,10 @@ struct Decoder
 	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
+	CODE::CRC<uint16_t> crc;
+	typedef CODE::GaloisField<8, 0b100011101, uint8_t> GF;
+	GF gf;
+	CODE::BoseChaudhuriHocquenghemDecoder<60, 1, 63, GF> bchdec;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
@@ -273,7 +290,8 @@ struct Decoder
 		}
 		return sum / (count * symbol_len/2);
 	}
-	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) : pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq())
+	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) :
+		pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq()), crc(0xA8F4)
 	{
 		bool real = pcm->channels() == 1;
 		blockdc.samples(2*(symbol_len+guard_len));
@@ -290,11 +308,49 @@ struct Decoder
 
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
-		int dis = displacement(buf+symbol_pos-(img_height+31)*(symbol_len+guard_len), buf+symbol_pos+(symbol_len+guard_len));
-		sfo_rad = (dis * Const::TwoPi()) / ((img_height+32)*(symbol_len+guard_len));
 		std::cerr << "symbol pos: " << symbol_pos << std::endl;
-		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
+
+		DSP::Phasor<cmplx> osc;
+		osc.omega(-cfo_rad);
+		for (int i = 0; i < symbol_len; ++i)
+			tdom[i] = buf[i+symbol_pos+(symbol_len+guard_len)] * osc();
+		fwd(fdom, tdom);
+		uint8_t data[8] = { 0 }, parity[24] = { 0 };
+		CODE::MLS seq4(mls4_poly);
+		for (int i = 0; i < 63; ++i)
+			CODE::set_be_bit(data, i, seq4() ^ ((fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0));
+		for (int i = 63; i < mls4_len; ++i)
+			CODE::set_be_bit(parity, i-63, seq4() ^ ((fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0));
+		int ret = bchdec(data, parity);
+		if (ret < 0) {
+			std::cerr << "BCH error." << std::endl;
+			return;
+		}
+		std::cerr << "BCH corrected " << ret << " errors" << std::endl;
+		uint64_t md = 0;
+		for (int i = 0; i < 47; ++i)
+			md |= (uint64_t)CODE::get_be_bit(data, i) << i;
+		uint16_t cs = 0;
+		for (int i = 0; i < 16; ++i)
+			cs |= (uint16_t)CODE::get_be_bit(data, i+47) << i;
+		crc.reset();
+		if (crc(md) != cs) {
+			std::cerr << "CRC error." << std::endl;
+			return;
+		}
+		if (md >= 129961739795077L) {
+			std::cerr << "meta data unsupported." << std::endl;
+			return;
+		}
+		char call_sign[10];
+		base37_decoder(call_sign, md, 9);
+		call_sign[9] = 0;
+		std::cerr << "call sign: " << call_sign << std::endl;
+
+		int dis = displacement(buf+symbol_pos-(img_height+31)*(symbol_len+guard_len), buf+symbol_pos-(symbol_len+guard_len));
+		sfo_rad = (dis * Const::TwoPi()) / ((img_height+30)*(symbol_len+guard_len));
+		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
 		if (dis) {
 			value diff = sfo_rad * (rate / Const::TwoPi());
 			resample(resam, buf, -diff, buffer_len);
@@ -307,12 +363,11 @@ struct Decoder
 		cfo_rad = correlator.cfo_rad + correlator.frac_cfo - frac_cfo(resam+symbol_pos);
 		std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
 
-		DSP::Phasor<cmplx> osc;
 		osc.omega(-cfo_rad);
 		for (int i = 0; i < buffer_len; ++i)
 			tdom[i] = resam[i] * osc();
 		if (1) {
-			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
+			fwd(tail, tdom+symbol_pos-(symbol_len+guard_len));
 			int finer_pos = symbol_pos - pos_error(tail);
 			if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
 				symbol_pos = finer_pos;
@@ -321,8 +376,8 @@ struct Decoder
 		}
 		if (1) {
 			fwd(head, tdom+symbol_pos-(symbol_len+guard_len));
-			fwd(tail, tdom+symbol_pos+(symbol_len+guard_len));
-			int distance = 2;
+			fwd(tail, tdom+symbol_pos+2*(symbol_len+guard_len));
+			int distance = 3;
 			int length = 0;
 			value sum = 0;
 			for (int i = 0; i < mls1_len; ++i)
