@@ -155,11 +155,13 @@ struct Encoder
 			fdom[i] = 0;
 		fdom[bin(mls4_off-1)] = mls4_fac;
 		for (int i = 0; i < 63; ++i)
-			fdom[bin(i+mls4_off)] = (1 - 2 * (CODE::get_be_bit(data, i)^seq4()));
+			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(data, i));
 		for (int i = 63; i < mls4_len; ++i)
-			fdom[bin(i+mls4_off)] = (1 - 2 * (CODE::get_be_bit(parity, i-63)^seq4()));
+			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(parity, i-63));
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= fdom[bin(i-1+mls4_off)];
+		for (int i = 0; i < mls4_len; ++i)
+			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
 		symbol(kern0);
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off, uint64_t call_sign) :

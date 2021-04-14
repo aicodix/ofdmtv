@@ -316,12 +316,14 @@ struct Decoder
 		for (int i = 0; i < symbol_len; ++i)
 			tdom[i] = buf[i+symbol_pos+(symbol_len+guard_len)] * osc();
 		fwd(fdom, tdom);
-		uint8_t data[8] = { 0 }, parity[24] = { 0 };
 		CODE::MLS seq4(mls4_poly);
+		for (int i = 0; i < mls4_len; ++i)
+			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
+		uint8_t data[8] = { 0 }, parity[24] = { 0 };
 		for (int i = 0; i < 63; ++i)
-			CODE::set_be_bit(data, i, seq4() ^ ((fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0));
+			CODE::set_be_bit(data, i, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
 		for (int i = 63; i < mls4_len; ++i)
-			CODE::set_be_bit(parity, i-63, seq4() ^ ((fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0));
+			CODE::set_be_bit(parity, i-63, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
 		int ret = bchdec(data, parity);
 		if (ret < 0) {
 			std::cerr << "BCH error." << std::endl;
