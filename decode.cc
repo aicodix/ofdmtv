@@ -181,7 +181,7 @@ struct Decoder
 	CODE::CRC<uint16_t> crc;
 	typedef CODE::GaloisField<8, 0b100011101, uint8_t> GF;
 	GF gf;
-	CODE::BoseChaudhuriHocquenghemDecoder<60, 1, 63, GF> bchdec;
+	CODE::BoseChaudhuriHocquenghemDecoder<58, 1, 71, GF> bchdec;
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
@@ -319,11 +319,11 @@ struct Decoder
 		CODE::MLS seq4(mls4_poly);
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
-		uint8_t data[8] = { 0 }, parity[24] = { 0 };
-		for (int i = 0; i < 63; ++i)
+		uint8_t data[9] = { 0 }, parity[23] = { 0 };
+		for (int i = 0; i < 71; ++i)
 			CODE::set_be_bit(data, i, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
-		for (int i = 63; i < mls4_len; ++i)
-			CODE::set_be_bit(parity, i-63, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
+		for (int i = 71; i < mls4_len; ++i)
+			CODE::set_be_bit(parity, i-71, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
 		int ret = bchdec(data, parity);
 		if (ret < 0) {
 			std::cerr << "BCH error." << std::endl;
@@ -331,22 +331,26 @@ struct Decoder
 		}
 		std::cerr << "BCH corrected " << ret << " errors" << std::endl;
 		uint64_t md = 0;
-		for (int i = 0; i < 47; ++i)
+		for (int i = 0; i < 55; ++i)
 			md |= (uint64_t)CODE::get_be_bit(data, i) << i;
 		uint16_t cs = 0;
 		for (int i = 0; i < 16; ++i)
-			cs |= (uint16_t)CODE::get_be_bit(data, i+47) << i;
+			cs |= (uint16_t)CODE::get_be_bit(data, i+55) << i;
 		crc.reset();
-		if (crc(md) != cs) {
+		if (crc(md<<9) != cs) {
 			std::cerr << "CRC error." << std::endl;
 			return;
 		}
-		if (md >= 129961739795077L) {
-			std::cerr << "meta data unsupported." << std::endl;
+		if ((md&255) != 1) {
+			std::cerr << "operation mode unsupported." << std::endl;
+			return;
+		}
+		if ((md>>8) == 0 || (md>>8) >= 129961739795077L) {
+			std::cerr << "call sign unsupported." << std::endl;
 			return;
 		}
 		char call_sign[10];
-		base37_decoder(call_sign, md, 9);
+		base37_decoder(call_sign, md>>8, 9);
 		call_sign[9] = 0;
 		std::cerr << "call sign: " << call_sign << std::endl;
 

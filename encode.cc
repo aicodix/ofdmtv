@@ -38,7 +38,7 @@ struct Encoder
 	DSP::WritePCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	CODE::CRC<uint16_t> crc;
-	CODE::BoseChaudhuriHocquenghemEncoder<255, 63> bchenc;
+	CODE::BoseChaudhuriHocquenghemEncoder<255, 71> bchenc;
 	cmplx fdom[2 * symbol_len];
 	cmplx tdom[symbol_len];
 	cmplx kern0[symbol_len], kern1[symbol_len];
@@ -141,23 +141,23 @@ struct Encoder
 	}
 	void meta_data(uint64_t md)
 	{
-		uint8_t data[8] = { 0 }, parity[24] = { 0 };
-		for (int i = 0; i < 47; ++i)
+		uint8_t data[9] = { 0 }, parity[23] = { 0 };
+		for (int i = 0; i < 55; ++i)
 			CODE::set_be_bit(data, i, (md>>i)&1);
 		crc.reset();
-		uint16_t cs = crc(md);
+		uint16_t cs = crc(md << 9);
 		for (int i = 0; i < 16; ++i)
-			CODE::set_be_bit(data, i+47, (cs>>i)&1);
+			CODE::set_be_bit(data, i+55, (cs>>i)&1);
 		bchenc(data, parity);
 		CODE::MLS seq4(mls4_poly);
 		value mls4_fac = sqrt(value(symbol_len) / value(mls4_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		fdom[bin(mls4_off-1)] = mls4_fac;
-		for (int i = 0; i < 63; ++i)
+		for (int i = 0; i < 71; ++i)
 			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(data, i));
-		for (int i = 63; i < mls4_len; ++i)
-			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(parity, i-63));
+		for (int i = 71; i < mls4_len; ++i)
+			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(parity, i-71));
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= fdom[bin(i-1+mls4_off)];
 		for (int i = 0; i < mls4_len; ++i)
@@ -166,11 +166,12 @@ struct Encoder
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off, uint64_t call_sign) :
 		pcm(pcm), crc(0xA8F4), bchenc({
-			0b100011101, 0b101110111, 0b111110011, 0b101101001, 0b110111101,
-			0b111100111, 0b100101011, 0b111010111, 0b000010011, 0b101100101,
-			0b110001011, 0b101100011, 0b100011011, 0b100111111, 0b110001101,
-			0b100101101, 0b101011111, 0b111111001, 0b111000011, 0b100111001,
-			0b110101001, 0b000011111, 0b110000111, 0b110110001, 0b101001101})
+			0b100011101, 0b101110111, 0b111110011, 0b101101001,
+			0b110111101, 0b111100111, 0b100101011, 0b111010111,
+			0b000010011, 0b101100101, 0b110001011, 0b101100011,
+			0b100011011, 0b100111111, 0b110001101, 0b100101101,
+			0b101011111, 0b111111001, 0b111000011, 0b100111001,
+			0b110101001, 0b000011111, 0b110000111, 0b110110001})
 	{
 		mls1_off = img_off = (freq_off * symbol_len) / rate - img_width / 2;
 		mls0_off = mls1_off + 34;
@@ -204,7 +205,7 @@ struct Encoder
 		bwd(kern1, fdom);
 		pilot_block();
 		schmidl_cox(true);
-		meta_data(call_sign);
+		meta_data((call_sign << 8) | 1);
 		CODE::MLS seq2(mls2_poly), seq3(mls3_poly);
 		value img_fac = sqrt(value(symbol_len) / value(img_width));
 		for (int i = 0; i < symbol_len; ++i)
@@ -225,7 +226,7 @@ struct Encoder
 		}
 		pilot_block();
 		schmidl_cox();
-		meta_data(call_sign);
+		meta_data((call_sign << 8) | 1);
 		pilot_block();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -279,7 +280,7 @@ int main(int argc, char **argv)
 	if (argc >= 8)
 		call_sign = base37_encoder(argv[7]);
 
-	if (call_sign < 0 || call_sign >= 129961739795077L) {
+	if (call_sign <= 0 || call_sign >= 129961739795077L) {
 		std::cerr << "Unsupported call sign." << std::endl;
 		return 1;
 	}
