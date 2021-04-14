@@ -91,7 +91,7 @@ struct Encoder
 	{
 		bwd(tdom, fdom);
 		for (int i = 0; i < symbol_len; ++i)
-			tdom[i] /= sqrt(value(symbol_len));
+			tdom[i] /= sqrt(value(8 * symbol_len));
 		if (kern)
 			improve_papr(kern);
 		for (int i = 0; i < guard_len; ++i) {
@@ -119,7 +119,7 @@ struct Encoder
 	void pilot_block()
 	{
 		CODE::MLS seq1(mls1_poly);
-		value mls1_fac = sqrt(value(symbol_len) / value(4 * mls1_len));
+		value mls1_fac = sqrt(value(symbol_len) / value(mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
@@ -129,7 +129,7 @@ struct Encoder
 	void schmidl_cox(bool inverted = false)
 	{
 		CODE::MLS seq0(mls0_poly);
-		value mls0_fac = sqrt(value(symbol_len) / value(4 * mls0_len));
+		value mls0_fac = sqrt(value(symbol_len) / value(mls0_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		fdom[bin(mls0_off-2)] = mls0_fac;
@@ -150,7 +150,7 @@ struct Encoder
 			CODE::set_be_bit(data, i+47, (cs>>i)&1);
 		bchenc(data, parity);
 		CODE::MLS seq4(mls4_poly);
-		value mls4_fac = sqrt(value(symbol_len) / value(4 * mls4_len));
+		value mls4_fac = sqrt(value(symbol_len) / value(mls4_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		fdom[bin(mls4_off-1)] = mls4_fac;
@@ -204,7 +204,7 @@ struct Encoder
 		schmidl_cox(true);
 		meta_data(call_sign);
 		CODE::MLS seq2(mls2_poly), seq3(mls3_poly);
-		value img_fac = sqrt(value(symbol_len) / value(4 * img_width));
+		value img_fac = sqrt(value(symbol_len) / value(img_width));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int j = 0; j < img_height; j += 2) {
