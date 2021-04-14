@@ -126,7 +126,7 @@ struct Encoder
 			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
 		symbol(kern1);
 	}
-	void schmidl_cox(bool inverted = false)
+	void schmidl_cox()
 	{
 		CODE::MLS seq0(mls0_poly);
 		value mls0_fac = sqrt(value(symbol_len) / value(mls0_len));
@@ -134,7 +134,7 @@ struct Encoder
 			fdom[i] = 0;
 		fdom[bin(mls0_off-2)] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[bin(2*i+mls0_off)] = (1 - 2 * (inverted^seq0()));
+			fdom[bin(2*i+mls0_off)] = (1 - 2 * seq0());
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol();
@@ -204,7 +204,7 @@ struct Encoder
 			fdom[i] /= value(10 * count);
 		bwd(kern1, fdom);
 		pilot_block();
-		schmidl_cox(true);
+		schmidl_cox();
 		meta_data((call_sign << 8) | 1);
 		CODE::MLS seq2(mls2_poly), seq3(mls3_poly);
 		value img_fac = sqrt(value(symbol_len) / value(img_width));

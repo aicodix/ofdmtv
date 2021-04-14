@@ -290,21 +290,23 @@ struct Decoder
 		}
 		return sum / (count * symbol_len/2);
 	}
-	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm) :
+	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm, int skip_count) :
 		pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq()), crc(0xA8F4)
 	{
 		bool real = pcm->channels() == 1;
 		blockdc.samples(2*(symbol_len+guard_len));
 		const cmplx *buf;
-		do  {
-			if (!pcm->good())
-				return;
-			cmplx tmp;
-			pcm->read(reinterpret_cast<value *>(&tmp), 1);
-			if (real)
-				tmp = hilbert(blockdc(tmp.real()));
-			buf = input_hist(tmp);
-		} while (!correlator(buf));
+		do {
+			do {
+				if (!pcm->good())
+					return;
+				cmplx tmp;
+				pcm->read(reinterpret_cast<value *>(&tmp), 1);
+				if (real)
+					tmp = hilbert(blockdc(tmp.real()));
+				buf = input_hist(tmp);
+			} while (!correlator(buf));
+		} while (skip_count--);
 
 		symbol_pos = correlator.symbol_pos;
 		cfo_rad = correlator.cfo_rad;
@@ -464,8 +466,8 @@ struct Decoder
 
 int main(int argc, char **argv)
 {
-	if (argc != 3) {
-		std::cerr << "usage: " << argv[0] << " OUTPUT INPUT" << std::endl;
+	if (argc < 3 || argc > 4) {
+		std::cerr << "usage: " << argv[0] << " OUTPUT INPUT [SKIP]" << std::endl;
 		return 1;
 	}
 
@@ -482,20 +484,24 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	int skip_count = 1;
+	if (argc > 3)
+		skip_count = std::atoi(argv[3]);
+
 	DSP::WritePNM<value> output_file(output_name, 320, 240);
 
 	switch (input_file.rate()) {
 	case 8000:
-		delete new Decoder<value, cmplx, 8000>(&output_file, &input_file);
+		delete new Decoder<value, cmplx, 8000>(&output_file, &input_file, skip_count);
 		break;
 	case 16000:
-		delete new Decoder<value, cmplx, 16000>(&output_file, &input_file);
+		delete new Decoder<value, cmplx, 16000>(&output_file, &input_file, skip_count);
 		break;
 	case 44100:
-		delete new Decoder<value, cmplx, 44100>(&output_file, &input_file);
+		delete new Decoder<value, cmplx, 44100>(&output_file, &input_file, skip_count);
 		break;
 	case 48000:
-		delete new Decoder<value, cmplx, 48000>(&output_file, &input_file);
+		delete new Decoder<value, cmplx, 48000>(&output_file, &input_file, skip_count);
 		break;
 	default:
 		std::cerr << "Unsupported sample rate." << std::endl;
