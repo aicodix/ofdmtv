@@ -41,7 +41,7 @@ struct Encoder
 	CODE::BoseChaudhuriHocquenghemEncoder<255, 63> bchenc;
 	cmplx fdom[2 * symbol_len];
 	cmplx tdom[symbol_len];
-	cmplx kern[symbol_len];
+	cmplx kern0[symbol_len], kern1[symbol_len];
 	cmplx guard[guard_len];
 	value rgb_line[2 * 3 * img_width];
 	cmplx papr_min, papr_max;
@@ -73,7 +73,7 @@ struct Encoder
 		out0[1] = cmplx((yuv0[1]+yuv1[1])/2-yuv0[0], (yuv0[2]+yuv1[2])/2-yuv0[0]);
 		out1[1] = cmplx(yuv1[0]+(yuv0[2]+yuv1[2])/2, yuv1[0]-(yuv0[1]+yuv1[1])/2);
 	}
-	void improve_papr()
+	void improve_papr(const cmplx *kern)
 	{
 		for (int n = 0; n < 1000; ++n) {
 			int peak = 0;
@@ -87,13 +87,13 @@ struct Encoder
 				tdom[i] -= orig * kern[i-peak];
 		}
 	}
-	void symbol(bool papr_reduction = true)
+	void symbol(const cmplx *kern = 0)
 	{
 		bwd(tdom, fdom);
 		for (int i = 0; i < symbol_len; ++i)
 			tdom[i] /= sqrt(value(symbol_len));
-		if (papr_reduction)
-			improve_papr();
+		if (kern)
+			improve_papr(kern);
 		for (int i = 0; i < guard_len; ++i) {
 			value x = value(i) / value(guard_len - 1);
 			x = value(0.5) * (value(1) - std::cos(DSP::Const<value>::Pi() * x));
@@ -124,7 +124,7 @@ struct Encoder
 			fdom[i] = 0;
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
 			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
-		symbol();
+		symbol(kern1);
 	}
 	void schmidl_cox(bool inverted = false)
 	{
@@ -137,7 +137,7 @@ struct Encoder
 			fdom[bin(2*i+mls0_off)] = (1 - 2 * (inverted^seq0()));
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
-		symbol(false);
+		symbol();
 	}
 	void meta_data(uint64_t md)
 	{
@@ -160,7 +160,7 @@ struct Encoder
 			fdom[bin(i+mls4_off)] = (1 - 2 * (CODE::get_be_bit(parity, i-63)^seq4()));
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= fdom[bin(i-1+mls4_off)];
-		symbol(false);
+		symbol(kern0);
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off, uint64_t call_sign) :
 		pcm(pcm), crc(0xA8F4), bchenc({
@@ -173,16 +173,33 @@ struct Encoder
 		mls1_off = img_off = (freq_off * symbol_len) / rate - img_width / 2;
 		mls0_off = mls1_off + 34;
 		mls4_off = mls1_off + 33;
+		int car_min = mls1_off - frame_width;
+		int car_max = mls1_off+mls1_len + frame_width;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
-		for (int i = 0; i < frame_width; ++i) {
-			fdom[bin(i+mls1_off-frame_width)] = 1;
-			fdom[bin(i+mls1_off+mls1_len)] = 1;
+		int count = 0;
+		for (int i = car_min; i <= car_max; ++i) {
+			if (i < mls4_off-1 || i >= mls4_off+mls4_len) {
+				fdom[bin(i)] = 1;
+				++count;
+			}
 		}
 		for (int i = 0; i < symbol_len; ++i)
-			fdom[i] /= value(10 * 2 * frame_width);
-		bwd(kern, fdom);
+			fdom[i] /= value(10 * count);
+		bwd(kern0, fdom);
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] = 0;
+		count = 0;
+		for (int i = car_min; i <= car_max; ++i) {
+			if (i < mls1_off || i >= mls1_off+mls1_len) {
+				fdom[bin(i)] = 1;
+				++count;
+			}
+		}
+		for (int i = 0; i < symbol_len; ++i)
+			fdom[i] /= value(10 * count);
+		bwd(kern1, fdom);
 		pilot_block();
 		schmidl_cox(true);
 		meta_data(call_sign);
@@ -201,7 +218,7 @@ struct Encoder
 					fdom[bin(i+img_off)] = img_fac * cmplx(
 						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
 						fdom[bin(i+img_off)+symbol_len*k].imag() * (1 - 2 * seq3()));
-				symbol();
+				symbol(kern1);
 			}
 		}
 		pilot_block();
