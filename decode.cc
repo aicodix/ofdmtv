@@ -100,14 +100,10 @@ public:
 		for (int i = 0; i < symbol_len; ++i)
 			tmp1[i] = samples[i+symbol_pos+symbol_len] * osc();
 		fwd(tmp0, tmp1);
-		value avg_pwr(0);
-		for (int i = 0; i < symbol_len; ++i)
-			avg_pwr += norm(tmp0[i]);
-		avg_pwr /= value(symbol_len);
 		for (int i = 0; i < symbol_len; ++i)
 			tmp1[i] = 0;
 		for (int i = 0; i < symbol_len; ++i)
-			if (norm(tmp0[i]) * 1000 > avg_pwr && norm(tmp0[i]) < avg_pwr * 1000 &&
+			if (norm(tmp0[bin(i-1)]) > 0 &&
 				std::min(norm(tmp0[i]), norm(tmp0[bin(i-1)])) * 2 >
 				std::max(norm(tmp0[i]), norm(tmp0[bin(i-1)])))
 					tmp1[i] = tmp0[i] / tmp0[bin(i-1)];
