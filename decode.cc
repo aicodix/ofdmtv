@@ -23,8 +23,7 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "fft.hh"
 #include "mls.hh"
 #include "crc.hh"
-#include "galois_field.hh"
-#include "bose_chaudhuri_hocquenghem_decoder.hh"
+#include "osd.hh"
 
 template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
 struct SchmidlCox
@@ -177,9 +176,8 @@ struct Decoder
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
 	CODE::CRC<uint16_t> crc;
-	typedef CODE::GaloisField<8, 0b100011101, uint8_t> GF;
-	GF gf;
-	CODE::BoseChaudhuriHocquenghemDecoder<58, 1, 71, GF> bchdec;
+	CODE::OrderedStatisticsDecoder<255, 71, 4> osddec;
+	int8_t genmat[255*71];
 	cmplx head[symbol_len], tail[symbol_len];
 	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
 	value rgb_line[2 * 3 * img_width];
@@ -291,6 +289,14 @@ struct Decoder
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm, int skip_count) :
 		pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq()), crc(0xA8F4)
 	{
+		CODE::BoseChaudhuriHocquenghemGenerator<255, 71>::matrix(genmat, true, {
+			0b100011101, 0b101110111, 0b111110011, 0b101101001,
+			0b110111101, 0b111100111, 0b100101011, 0b111010111,
+			0b000010011, 0b101100101, 0b110001011, 0b101100011,
+			0b100011011, 0b100111111, 0b110001101, 0b100101101,
+			0b101011111, 0b111111001, 0b111000011, 0b100111001,
+			0b110101001, 0b000011111, 0b110000111, 0b110110001});
+
 		bool real = pcm->channels() == 1;
 		blockdc.samples(2*(symbol_len+guard_len));
 		const cmplx *buf;
@@ -319,17 +325,17 @@ struct Decoder
 		CODE::MLS seq4(mls4_poly);
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
-		uint8_t data[9] = { 0 }, parity[23] = { 0 };
-		for (int i = 0; i < 71; ++i)
-			CODE::set_be_bit(data, i, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
-		for (int i = 71; i < mls4_len; ++i)
-			CODE::set_be_bit(parity, i-71, (fdom[bin(i+mls4_off)] / fdom[bin(i-1+mls4_off)]).real() < 0);
-		int ret = bchdec(data, parity);
-		if (ret < 0) {
-			std::cerr << "BCH error." << std::endl;
+		int8_t soft[mls4_len];
+		uint8_t data[(mls4_len+7)/8];
+		for (int i = 0; i < mls4_len; ++i)
+			soft[i] = std::min<value>(std::max<value>(
+				std::nearbyint(127 * (fdom[bin(i+mls4_off)] /
+				fdom[bin(i-1+mls4_off)]).real()), -128), 127);
+		bool unique = osddec(data, soft, genmat);
+		if (!unique) {
+			std::cerr << "OSD error." << std::endl;
 			return;
 		}
-		std::cerr << "BCH corrected " << ret << " errors" << std::endl;
 		uint64_t md = 0;
 		for (int i = 0; i < 55; ++i)
 			md |= (uint64_t)CODE::get_be_bit(data, i) << i;
