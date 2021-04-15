@@ -128,8 +128,10 @@ public:
 		if (peak <= next * 4)
 			return false;
 
-		if (abs(arg(tmp2[shift])) >= Const::FourthPi())
+		int pos_err = std::nearbyint(arg(tmp2[shift]) * symbol_len / Const::TwoPi());
+		if (abs(pos_err) > guard_len / 2)
 			return false;
+		symbol_pos -= pos_err;
 
 		cfo_rad = shift * (Const::TwoPi() / symbol_len) - frac_cfo;
 		if (cfo_rad >= Const::Pi())
