@@ -97,7 +97,7 @@ struct Encoder
 		for (int i = 0; i < guard_len; ++i) {
 			value x = value(i) / value(guard_len - 1);
 			x = value(0.5) * (value(1) - std::cos(DSP::Const<value>::Pi() * x));
-			guard[i] = DSP::lerp(x, guard[i], tdom[i+symbol_len-guard_len]);
+			guard[i] = DSP::lerp(guard[i], tdom[i+symbol_len-guard_len], x);
 		}
 		cmplx peak, mean;
 		for (int i = 0; i < symbol_len; ++i) {

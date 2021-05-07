@@ -455,7 +455,7 @@ struct Decoder
 				cur += (symbol_len+guard_len);
 				value x = value((j+k)%8+1) / value(9);
 				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+img_off)+symbol_len*k] /= DSP::lerp(x, head[bin(i+img_off)], tail[bin(i+img_off)]);
+					fdom[bin(i+img_off)+symbol_len*k] /= DSP::lerp(head[bin(i+img_off)], tail[bin(i+img_off)], x);
 				for (int i = 0; i < img_width; ++i)
 					fdom[bin(i+img_off)+symbol_len*k] = cmplx(
 						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
