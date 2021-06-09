@@ -25,7 +25,7 @@ namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; 
 #include "crc.hh"
 #include "osd.hh"
 
-template <typename value, typename cmplx, int buffer_len, int symbol_len, int guard_len>
+template <typename value, typename cmplx, int search_pos, int symbol_len, int guard_len>
 struct SchmidlCox
 {
 	typedef DSP::Const<value> Const;
@@ -65,8 +65,8 @@ public:
 	}
 	bool operator()(const cmplx *samples)
 	{
-		cmplx P = cor(samples[buffer_len-7*symbol_len] * conj(samples[buffer_len-6*symbol_len]));
-		value R = value(0.5) * pwr(norm(samples[buffer_len-6*symbol_len]));
+		cmplx P = cor(samples[search_pos+symbol_len] * conj(samples[search_pos+2*symbol_len]));
+		value R = value(0.5) * pwr(norm(samples[search_pos+2*symbol_len]));
 		value min_R = 0.0001 * symbol_len;
 		R = std::max(R, min_R);
 		value timing = match(norm(P) / (R * R));
@@ -82,7 +82,7 @@ public:
 			timing_max = timing;
 			phase_max = phase;
 			index_max = match_del;
-		} else if (index_max < 3*symbol_len) {
+		} else if (index_max < symbol_len + guard_len + match_del) {
 			++index_max;
 		}
 
@@ -93,7 +93,7 @@ public:
 
 		DSP::Phasor<cmplx> osc;
 		osc.omega(frac_cfo);
-		symbol_pos = buffer_len - 8*symbol_len - index_max;
+		symbol_pos = search_pos - index_max;
 		index_max = 0;
 		timing_max = 0;
 		for (int i = 0; i < symbol_len; ++i)
@@ -167,6 +167,7 @@ struct Decoder
 	static const int mls4_off = -127;
 	static const int mls4_poly = 0b100101011;
 	static const int buffer_len = (38 + img_height) * (symbol_len + guard_len);
+	static const int search_pos = buffer_len - 4 * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
@@ -174,7 +175,7 @@ struct Decoder
 	DSP::Hilbert<cmplx, filter_len> hilbert;
 	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
-	SchmidlCox<value, cmplx, buffer_len, symbol_len/2, guard_len> correlator;
+	SchmidlCox<value, cmplx, search_pos, symbol_len/2, guard_len> correlator;
 	CODE::CRC<uint16_t> crc;
 	CODE::OrderedStatisticsDecoder<255, 71, 4> osddec;
 	int8_t genmat[255*71];
