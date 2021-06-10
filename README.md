@@ -40,7 +40,7 @@ Prerequisite: [disorders](https://github.com/aicodix/disorders)
 Encode [smpte.ppm](smpte.ppm) to [analytic](https://en.wikipedia.org/wiki/Analytic_signal) audio signal, add [multipath](https://en.wikipedia.org/wiki/Multipath_propagation), [AWGN](https://en.wikipedia.org/wiki/Additive_white_Gaussian_noise), [SFO, CFO](https://en.wikipedia.org/wiki/Carrier_frequency_offset), decode and compare to original in [feh](https://feh.finalrewind.org/):
 
 ```
-./encode ping.wav 8000 16 2 smpte.ppm && ../disorders/multipath pong.wav ping.wav ../disorders/multipath.txt 10 && ../disorders/awgn ping.wav pong.wav -50 && ../disorders/cfo pong.wav ping.wav 234.567 && ../disorders/sfo ping.wav pong.wav 40 && ./decode decoded.ppm ping.wav && feh decoded.ppm smpte.ppm
+./encode ping.wav 8000 16 2 smpte.ppm 2000 && ../disorders/multipath pong.wav ping.wav ../disorders/multipath.txt 10 && ../disorders/cfo ping.wav pong.wav 234.567 && ../disorders/sfo pong.wav ping.wav 147 && ../disorders/awgn ping.wav pong.wav -30 && ./decode decoded.ppm ping.wav && feh decoded.ppm smpte.ppm
 ```
 
 ### Reading
