@@ -180,7 +180,7 @@ struct Decoder
 	cmplx chan[mls1_len];
 	cmplx fdom[2 * symbol_len], tdom[symbol_len];
 	value rgb_line[2 * 3 * img_width];
-	value phase[symbol_len/2];
+	value phase[mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -320,7 +320,19 @@ struct Decoder
 		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		for (int j = 0; j < img_height; j += 2) {
 			if (j%8==0) {
-				for (int i = 0; i < (symbol_len+guard_len); ++i)
+				for (int i = 0; i < symbol_len; ++i)
+					tdom[i] = buf[i+(symbol_len+guard_len)] * osc();
+				fwd(fdom, tdom);
+				seq1.reset();
+				for (int i = 0; i < mls1_len; ++i)
+					chan[i] = nrz(seq1()) * fdom[bin(i+mls1_off)];
+				int count = mls1_len - 1;
+				for (int i = 0; i < count; ++i)
+					phase[i] = arg(chan[i+1] / chan[i]);
+				std::nth_element(phase, phase+count/2, phase+count);
+				value angle_err = phase[count/2];
+				int pos_err = std::nearbyint((symbol_len * angle_err) / Const::TwoPi());
+				for (int i = 0; i < (symbol_len+guard_len) - pos_err; ++i)
 					buf = next_sample();
 				for (int i = 0; i < symbol_len; ++i)
 					tdom[i] = buf[i] * osc();
