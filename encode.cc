@@ -54,6 +54,10 @@ struct Encoder
 	{
 		return (carrier + symbol_len) % symbol_len;
 	}
+	static value nrz(bool bit)
+	{
+		return 1 - 2 * bit;
+	}
 	void rgb_to_yuv(value *yuv, const value *rgb)
 	{
 		value WR(0.299), WB(0.114), WG(1-WR-WB), UMAX(0.493), VMAX(0.877);
@@ -123,7 +127,7 @@ struct Encoder
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int i = mls1_off; i < mls1_off + mls1_len; ++i)
-			fdom[bin(i)] = mls1_fac * (1 - 2 * seq1());
+			fdom[bin(i)] = mls1_fac * nrz(seq1());
 		symbol(kern1);
 	}
 	void schmidl_cox()
@@ -134,7 +138,7 @@ struct Encoder
 			fdom[i] = 0;
 		fdom[bin(mls0_off-2)] = mls0_fac;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[bin(2*i+mls0_off)] = (1 - 2 * seq0());
+			fdom[bin(2*i+mls0_off)] = nrz(seq0());
 		for (int i = 0; i < mls0_len; ++i)
 			fdom[bin(2*i+mls0_off)] *= fdom[bin(2*(i-1)+mls0_off)];
 		symbol();
@@ -155,13 +159,13 @@ struct Encoder
 			fdom[i] = 0;
 		fdom[bin(mls4_off-1)] = mls4_fac;
 		for (int i = 0; i < 71; ++i)
-			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(data, i));
+			fdom[bin(i+mls4_off)] = nrz(CODE::get_be_bit(data, i));
 		for (int i = 71; i < mls4_len; ++i)
-			fdom[bin(i+mls4_off)] = (1 - 2 * CODE::get_be_bit(parity, i-71));
+			fdom[bin(i+mls4_off)] = nrz(CODE::get_be_bit(parity, i-71));
 		for (int i = 0; i < mls4_len; ++i)
 			fdom[bin(i+mls4_off)] *= fdom[bin(i-1+mls4_off)];
 		for (int i = 0; i < mls4_len; ++i)
-			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
+			fdom[bin(i+mls4_off)] *= nrz(seq4());
 		symbol(kern0);
 	}
 	Encoder(DSP::WritePCM<value> *pcm, DSP::ReadPEL<value> *pel, int freq_off, uint64_t call_sign) :
@@ -219,15 +223,11 @@ struct Encoder
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0; i < img_width; ++i)
 					fdom[bin(i+img_off)] = img_fac * cmplx(
-						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[bin(i+img_off)+symbol_len*k].imag() * (1 - 2 * seq3()));
+						fdom[bin(i+img_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(i+img_off)+symbol_len*k].imag() * nrz(seq3()));
 				symbol(kern1);
 			}
 		}
-		pilot_block();
-		schmidl_cox();
-		meta_data((call_sign << 8) | 1);
-		pilot_block();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		symbol();

@@ -9,7 +9,6 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 #include <cmath>
 namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; }
 #include "bip_buffer.hh"
-#include "resampler.hh"
 #include "trigger.hh"
 #include "complex.hh"
 #include "blockdc.hh"
@@ -166,21 +165,20 @@ struct Decoder
 	static const int mls4_len = 255;
 	static const int mls4_off = -127;
 	static const int mls4_poly = 0b100101011;
-	static const int buffer_len = (38 + img_height) * (symbol_len + guard_len);
+	static const int buffer_len = 6 * (symbol_len + guard_len);
 	static const int search_pos = buffer_len - 4 * (symbol_len + guard_len);
 	DSP::ReadPCM<value> *pcm;
 	DSP::FastFourierTransform<symbol_len, cmplx, -1> fwd;
 	DSP::FastFourierTransform<symbol_len, cmplx, 1> bwd;
 	DSP::BlockDC<value, value> blockdc;
 	DSP::Hilbert<cmplx, filter_len> hilbert;
-	DSP::Resampler<value, filter_len, 3> resample;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
 	SchmidlCox<value, cmplx, search_pos, symbol_len/2, guard_len> correlator;
 	CODE::CRC<uint16_t> crc;
 	CODE::OrderedStatisticsDecoder<255, 71, 4> osddec;
 	int8_t genmat[255*71];
-	cmplx head[symbol_len], tail[symbol_len];
-	cmplx fdom[2 * symbol_len], tdom[buffer_len], resam[buffer_len];
+	cmplx chan[mls1_len];
+	cmplx fdom[2 * symbol_len], tdom[symbol_len];
 	value rgb_line[2 * 3 * img_width];
 	value phase[symbol_len/2];
 	value cfo_rad, sfo_rad;
@@ -189,6 +187,10 @@ struct Decoder
 	static int bin(int carrier)
 	{
 		return (carrier + symbol_len) % symbol_len;
+	}
+	static value nrz(bool bit)
+	{
+		return 1 - 2 * bit;
 	}
 	void yuv_to_rgb(value *rgb, const value *yuv)
 	{
@@ -226,69 +228,19 @@ struct Decoder
 		for (int i = 0; i < symbol_len/2; ++i)
 			fdom[i] = 0;
 		for (int i = 0; i < mls0_len; ++i)
-			fdom[(i+mls0_off/2+symbol_len/2)%(symbol_len/2)] = 1 - 2 * seq0();
+			fdom[(i+mls0_off/2+symbol_len/2)%(symbol_len/2)] = nrz(seq0());
 		return fdom;
 	}
-	int pos_error(const cmplx *symbol)
+	const cmplx *next_sample()
 	{
-		value avg = 0;
-		for (int i = 1; i < mls1_len; ++i)
-			if ((symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]).real() >= 0)
-				avg += phase[i] = arg(symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]);
-			else
-				avg += phase[i] = arg(- symbol[bin(i+mls1_off)] / symbol[bin(i-1+mls1_off)]);
-		avg /= value(mls1_len-1);
-		value var = 0;
-		for (int i = 1; i < mls1_len; ++i)
-			var += (phase[i] - avg) * (phase[i] - avg);
-		value std_dev = std::sqrt(var/(mls1_len-2));
-		int count = 0;
-		value sum = 0;
-		for (int i = 1; i < mls1_len; ++i) {
-			if (std::abs(phase[i] - avg) <= std_dev) {
-				sum += phase[i];
-				++count;
-			}
-		}
-		return std::nearbyint(sum * symbol_len / (count * Const::TwoPi()));
-	}
-	int displacement(const cmplx *sym0, const cmplx *sym1)
-	{
-		fwd(head, sym0);
-		fwd(tail, sym1);
-		for (int i = 0; i < symbol_len; ++i)
-			head[i] *= conj(tail[i]);
-		bwd(tail, head);
-		int idx = 0;
-		for (int i = 0; i < symbol_len; ++i)
-			if (norm(tail[i]) > norm(tail[idx]))
-				idx = i;
-		if (idx > symbol_len / 2)
-			idx -= symbol_len;
-		return -idx;
-	}
-	value frac_cfo(const cmplx *samples)
-	{
-		value avg = 0;
-		for (int i = 0; i < symbol_len/2; ++i)
-			avg += phase[i] = arg(samples[i] * conj(samples[i+symbol_len/2]));
-		avg /= value(symbol_len/2);
-		value var = 0;
-		for (int i = 0; i < symbol_len/2; ++i)
-			var += (phase[i] - avg) * (phase[i] - avg);
-		value std_dev = std::sqrt(var/(symbol_len/2-1));
-		int count = 0;
-		value sum = 0;
-		for (int i = 0; i < symbol_len/2; ++i) {
-			if (std::abs(phase[i] - avg) <= std_dev) {
-				sum += phase[i];
-				++count;
-			}
-		}
-		return sum / (count * symbol_len/2);
+		cmplx tmp;
+		pcm->read(reinterpret_cast<value *>(&tmp), 1);
+		if (pcm->channels() == 1)
+			tmp = hilbert(blockdc(tmp.real()));
+		return input_hist(tmp);
 	}
 	Decoder(DSP::WritePEL<value> *pel, DSP::ReadPCM<value> *pcm, int skip_count) :
-		pcm(pcm), resample(rate, (rate * 19) / 40, 2), correlator(mls0_seq()), crc(0xA8F4)
+		pcm(pcm), correlator(mls0_seq()), crc(0xA8F4)
 	{
 		CODE::BoseChaudhuriHocquenghemGenerator<255, 71>::matrix(genmat, true, {
 			0b100011101, 0b101110111, 0b111110011, 0b101101001,
@@ -298,169 +250,101 @@ struct Decoder
 			0b101011111, 0b111111001, 0b111000011, 0b100111001,
 			0b110101001, 0b000011111, 0b110000111, 0b110110001});
 
-		bool real = pcm->channels() == 1;
+		DSP::Phasor<cmplx> osc;
 		blockdc.samples(2*(symbol_len+guard_len));
 		const cmplx *buf;
+		bool okay;
 		do {
+			okay = false;
 			do {
 				if (!pcm->good())
 					return;
-				cmplx tmp;
-				pcm->read(reinterpret_cast<value *>(&tmp), 1);
-				if (real)
-					tmp = hilbert(blockdc(tmp.real()));
-				buf = input_hist(tmp);
+				buf = next_sample();
 			} while (!correlator(buf));
+
+			symbol_pos = correlator.symbol_pos;
+			cfo_rad = correlator.cfo_rad;
+			std::cerr << "symbol pos: " << symbol_pos << std::endl;
+			std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
+
+			osc.omega(-cfo_rad);
+			for (int i = 0; i < symbol_len; ++i)
+				tdom[i] = buf[i+symbol_pos+(symbol_len+guard_len)] * osc();
+			fwd(fdom, tdom);
+			CODE::MLS seq4(mls4_poly);
+			for (int i = 0; i < mls4_len; ++i)
+				fdom[bin(i+mls4_off)] *= nrz(seq4());
+			int8_t soft[mls4_len];
+			uint8_t data[(mls4_len+7)/8];
+			for (int i = 0; i < mls4_len; ++i)
+				soft[i] = std::min<value>(std::max<value>(
+					std::nearbyint(127 * (fdom[bin(i+mls4_off)] /
+					fdom[bin(i-1+mls4_off)]).real()), -128), 127);
+			bool unique = osddec(data, soft, genmat);
+			if (!unique) {
+				std::cerr << "OSD error." << std::endl;
+				return;
+			}
+			uint64_t md = 0;
+			for (int i = 0; i < 55; ++i)
+				md |= (uint64_t)CODE::get_be_bit(data, i) << i;
+			uint16_t cs = 0;
+			for (int i = 0; i < 16; ++i)
+				cs |= (uint16_t)CODE::get_be_bit(data, i+55) << i;
+			crc.reset();
+			if (crc(md<<9) != cs) {
+				std::cerr << "CRC error." << std::endl;
+				return;
+			}
+			if ((md&255) != 1) {
+				std::cerr << "operation mode unsupported." << std::endl;
+				return;
+			}
+			if ((md>>8) == 0 || (md>>8) >= 129961739795077L) {
+				std::cerr << "call sign unsupported." << std::endl;
+				return;
+			}
+			char call_sign[10];
+			base37_decoder(call_sign, md>>8, 9);
+			call_sign[9] = 0;
+			std::cerr << "call sign: " << call_sign << std::endl;
+			okay = true;
 		} while (skip_count--);
 
-		symbol_pos = correlator.symbol_pos;
-		cfo_rad = correlator.cfo_rad;
-		std::cerr << "symbol pos: " << symbol_pos << std::endl;
-		std::cerr << "coarse cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
+		if (!okay)
+			return;
 
-		DSP::Phasor<cmplx> osc;
-		osc.omega(-cfo_rad);
-		for (int i = 0; i < symbol_len; ++i)
-			tdom[i] = buf[i+symbol_pos+(symbol_len+guard_len)] * osc();
-		fwd(fdom, tdom);
-		CODE::MLS seq4(mls4_poly);
-		for (int i = 0; i < mls4_len; ++i)
-			fdom[bin(i+mls4_off)] *= (1 - 2 * seq4());
-		int8_t soft[mls4_len];
-		uint8_t data[(mls4_len+7)/8];
-		for (int i = 0; i < mls4_len; ++i)
-			soft[i] = std::min<value>(std::max<value>(
-				std::nearbyint(127 * (fdom[bin(i+mls4_off)] /
-				fdom[bin(i-1+mls4_off)]).real()), -128), 127);
-		bool unique = osddec(data, soft, genmat);
-		if (!unique) {
-			std::cerr << "OSD error." << std::endl;
-			return;
-		}
-		uint64_t md = 0;
-		for (int i = 0; i < 55; ++i)
-			md |= (uint64_t)CODE::get_be_bit(data, i) << i;
-		uint16_t cs = 0;
-		for (int i = 0; i < 16; ++i)
-			cs |= (uint16_t)CODE::get_be_bit(data, i+55) << i;
-		crc.reset();
-		if (crc(md<<9) != cs) {
-			std::cerr << "CRC error." << std::endl;
-			return;
-		}
-		if ((md&255) != 1) {
-			std::cerr << "operation mode unsupported." << std::endl;
-			return;
-		}
-		if ((md>>8) == 0 || (md>>8) >= 129961739795077L) {
-			std::cerr << "call sign unsupported." << std::endl;
-			return;
-		}
-		char call_sign[10];
-		base37_decoder(call_sign, md>>8, 9);
-		call_sign[9] = 0;
-		std::cerr << "call sign: " << call_sign << std::endl;
+		for (int i = 0; i < symbol_pos+(symbol_len+guard_len); ++i)
+			buf = next_sample();
 
-		int dis = displacement(buf+symbol_pos-(img_height+31)*(symbol_len+guard_len), buf+symbol_pos-(symbol_len+guard_len));
-		sfo_rad = (dis * Const::TwoPi()) / ((img_height+30)*(symbol_len+guard_len));
-		std::cerr << "coarse sfo: " << 1000000 * sfo_rad / Const::TwoPi() << " ppm" << std::endl;
-		if (dis) {
-			value diff = sfo_rad * (rate / Const::TwoPi());
-			resample(resam, buf, -diff, buffer_len);
-			symbol_pos = std::nearbyint(correlator.symbol_pos * (1 - sfo_rad / Const::TwoPi()));
-			std::cerr << "resam pos: " << symbol_pos << std::endl;
-		} else {
-			for (int i = 0; i < buffer_len; ++i)
-				resam[i] = buf[i];
-		}
-		cfo_rad = correlator.cfo_rad + correlator.frac_cfo - frac_cfo(resam+symbol_pos);
-		std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz " << std::endl;
-
-		osc.omega(-cfo_rad);
-		for (int i = 0; i < buffer_len; ++i)
-			tdom[i] = resam[i] * osc();
-		if (1) {
-			fwd(tail, tdom+symbol_pos-(symbol_len+guard_len));
-			int finer_pos = symbol_pos - pos_error(tail);
-			if (finer_pos != symbol_pos && correlator.symbol_pos - guard_len / 2 < finer_pos && finer_pos < correlator.symbol_pos + guard_len / 2) {
-				symbol_pos = finer_pos;
-				std::cerr << "finer pos: " << symbol_pos << std::endl;
-			}
-		}
-		if (1) {
-			fwd(head, tdom+symbol_pos-(symbol_len+guard_len));
-			fwd(tail, tdom+symbol_pos+2*(symbol_len+guard_len));
-			int distance = 3;
-			int length = 0;
-			value sum = 0;
-			for (int i = 0; i < mls1_len; ++i)
-				sum += phase[length++] = arg(head[bin(i+mls1_off)] / tail[bin(i+mls1_off)]);
-			value avg = sum / length;
-			if (1) {
-				value var = 0;
-				for (int i = 0; i < length; ++i)
-					var += (phase[i] - avg) * (phase[i] - avg);
-				value std_dev = std::sqrt(var/(length-1));
-				int count = 0;
-				sum = 0;
-				for (int i = 0; i < length; ++i) {
-					if (std::abs(phase[i] - avg) <= std_dev) {
-						sum += phase[i];
-						++count;
-					}
-				}
-				avg = sum / count;
-			}
-			cfo_rad -= avg / value(distance*(symbol_len+guard_len));
-			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
-			osc.omega(-cfo_rad);
-			for (int i = 0; i < buffer_len; ++i)
-				tdom[i] = resam[i] * osc();
-		}
-		if (1) {
-			int distance = 9;
-			int count = 0;
-			value sum = 0;
-			fwd(head, tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len));
-			for (int j = 1; j < 31; ++j) {
-				fwd(tail, tdom+symbol_pos-(img_height+31-j*distance)*(symbol_len+guard_len));
-				for (int i = 0; i < img_width; ++i, ++count)
-					sum += arg(head[bin(i+img_off)] / tail[bin(i+img_off)]);
-				for (int i = 0; i < symbol_len; ++i)
-					head[i] = tail[i];
-			}
-			value avg = sum / count;
-			cfo_rad -= avg / value(distance*(symbol_len+guard_len));
-			std::cerr << "finer cfo: " << cfo_rad * (rate / Const::TwoPi()) << " Hz" << std::endl;
-			osc.omega(-cfo_rad);
-			for (int i = 0; i < buffer_len; ++i)
-				tdom[i] = resam[i] * osc();
-		}
 		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
-		fwd(tail, tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len));
-		for (int i = 0; i < mls1_len; ++i)
-			tail[bin(i+mls1_off)] *= (1 - 2 * seq1());
-		cmplx *cur = tdom+symbol_pos-(img_height+31)*(symbol_len+guard_len);
 		for (int j = 0; j < img_height; j += 2) {
 			if (j%8==0) {
+				for (int i = 0; i < (symbol_len+guard_len); ++i)
+					buf = next_sample();
 				for (int i = 0; i < symbol_len; ++i)
-					head[i] = tail[i];
-				fwd(tail, cur+9*(symbol_len+guard_len));
-				cur += (symbol_len+guard_len);
+					tdom[i] = buf[i] * osc();
+				for (int i = 0; i < guard_len; ++i)
+					osc();
+				fwd(fdom, tdom);
 				seq1.reset();
 				for (int i = 0; i < mls1_len; ++i)
-					tail[bin(i+mls1_off)] *= (1 - 2 * seq1());
+					chan[i] = nrz(seq1()) * fdom[bin(i+mls1_off)];
 			}
 			for (int k = 0; k < 2; ++k) {
-				fwd(fdom+symbol_len*k, cur);
-				cur += (symbol_len+guard_len);
-				value x = value((j+k)%8+1) / value(9);
+				for (int i = 0; i < (symbol_len+guard_len); ++i)
+					buf = next_sample();
+				for (int i = 0; i < symbol_len; ++i)
+					tdom[i] = buf[i] * osc();
+				for (int i = 0; i < guard_len; ++i)
+					osc();
+				fwd(fdom+symbol_len*k, tdom);
 				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+img_off)+symbol_len*k] /= DSP::lerp(head[bin(i+img_off)], tail[bin(i+img_off)], x);
+					fdom[bin(i+img_off)+symbol_len*k] /= chan[i];
 				for (int i = 0; i < img_width; ++i)
 					fdom[bin(i+img_off)+symbol_len*k] = cmplx(
-						fdom[bin(i+img_off)+symbol_len*k].real() * (1 - 2 * seq2()),
-						fdom[bin(i+img_off)+symbol_len*k].imag() * (1 - 2 * seq3()));
+						fdom[bin(i+img_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(i+img_off)+symbol_len*k].imag() * nrz(seq3()));
 			}
 			for (int i = 0; i < img_width; i += 2)
 				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len);
@@ -489,7 +373,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	int skip_count = 1;
+	int skip_count = 0;
 	if (argc > 3)
 		skip_count = std::atoi(argv[3]);
 
