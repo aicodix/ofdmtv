@@ -45,7 +45,6 @@ struct Encoder
 	cmplx guard[guard_len];
 	value rgb_line[2 * 3 * img_width];
 	cmplx papr_min, papr_max;
-	int img_off;
 	int mls0_off;
 	int mls1_off;
 	int mls4_off;
@@ -177,9 +176,10 @@ struct Encoder
 			0b101011111, 0b111111001, 0b111000011, 0b100111001,
 			0b110101001, 0b000011111, 0b110000111, 0b110110001})
 	{
-		mls1_off = img_off = (freq_off * symbol_len) / rate - img_width / 2;
-		mls0_off = mls1_off + 34;
-		mls4_off = mls1_off + 33;
+		int offset = (freq_off * symbol_len) / rate;
+		mls1_off = offset - mls1_len / 2;
+		mls0_off = offset - mls0_len + 1;
+		mls4_off = offset - mls4_len / 2;
 		int car_min = mls1_off - frame_width;
 		int car_max = mls1_off+mls1_len + frame_width;
 		papr_min = cmplx(1000, 1000), papr_max = cmplx(-1000, -1000);
@@ -219,12 +219,12 @@ struct Encoder
 				pilot_block();
 			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0; i < img_width; i += 2)
-				rgb_to_cmplx(fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+				rgb_to_cmplx(fdom+bin(i+mls1_off), fdom+bin(i+mls1_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+img_off)] = img_fac * cmplx(
-						fdom[bin(i+img_off)+symbol_len*k].real() * nrz(seq2()),
-						fdom[bin(i+img_off)+symbol_len*k].imag() * nrz(seq3()));
+					fdom[bin(i+mls1_off)] = img_fac * cmplx(
+						fdom[bin(i+mls1_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(i+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
 				symbol(kern1);
 			}
 		}

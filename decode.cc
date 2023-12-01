@@ -151,19 +151,18 @@ struct Decoder
 	static const int symbol_len = (1280 * rate) / 8000;
 	static const int filter_len = (((21 * rate) / 8000) & ~3) | 1;
 	static const int guard_len = symbol_len / 8;
-	static const int img_off = -160;
 	static const int img_width = 320;
 	static const int img_height = 240;
-	static const int mls0_off = -126;
 	static const int mls0_len = 127;
+	static const int mls0_off = -mls0_len + 1;
 	static const int mls0_poly = 0b10001001;
-	static const int mls1_off = img_off;
 	static const int mls1_len = img_width;
+	static const int mls1_off = -mls1_len / 2;
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
 	static const int mls3_poly = 0b10111010010000001;
 	static const int mls4_len = 255;
-	static const int mls4_off = -127;
+	static const int mls4_off = -mls4_len / 2;
 	static const int mls4_poly = 0b100101011;
 	static const int buffer_len = 6 * (symbol_len + guard_len);
 	static const int search_pos = buffer_len - 4 * (symbol_len + guard_len);
@@ -352,14 +351,14 @@ struct Decoder
 					osc();
 				fwd(fdom+symbol_len*k, tdom);
 				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+img_off)+symbol_len*k] /= chan[i];
+					fdom[bin(i+mls1_off)+symbol_len*k] /= chan[i];
 				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+img_off)+symbol_len*k] = cmplx(
-						fdom[bin(i+img_off)+symbol_len*k].real() * nrz(seq2()),
-						fdom[bin(i+img_off)+symbol_len*k].imag() * nrz(seq3()));
+					fdom[bin(i+mls1_off)+symbol_len*k] = cmplx(
+						fdom[bin(i+mls1_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(i+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
 			}
 			for (int i = 0; i < img_width; i += 2)
-				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(i+img_off), fdom+bin(i+img_off)+symbol_len);
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(i+mls1_off), fdom+bin(i+mls1_off)+symbol_len);
 			pel->write(rgb_line, 2 * img_width);
 		}
 	}
