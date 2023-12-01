@@ -9,6 +9,7 @@ Copyright 2020 Ahmet Inan <inan@aicodix.de>
 #include <cmath>
 namespace DSP { using std::abs; using std::min; using std::cos; using std::sin; }
 #include "bip_buffer.hh"
+#include "theil_sen.hh"
 #include "trigger.hh"
 #include "complex.hh"
 #include "blockdc.hh"
@@ -153,10 +154,13 @@ struct Decoder
 	static const int guard_len = symbol_len / 8;
 	static const int img_width = 320;
 	static const int img_height = 240;
+	static const int teeth_count = 16;
+	static const int teeth_dist = img_width / teeth_count;
+	static const int teeth_off = teeth_dist / 2;
 	static const int mls0_len = 127;
 	static const int mls0_off = -mls0_len + 1;
 	static const int mls0_poly = 0b10001001;
-	static const int mls1_len = img_width;
+	static const int mls1_len = img_width + teeth_count;
 	static const int mls1_off = -mls1_len / 2;
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
@@ -172,6 +176,7 @@ struct Decoder
 	DSP::BlockDC<value, value> blockdc;
 	DSP::Hilbert<cmplx, filter_len> hilbert;
 	DSP::BipBuffer<cmplx, buffer_len> input_hist;
+	DSP::TheilSenEstimator<value, mls1_len> tse;
 	SchmidlCox<value, cmplx, search_pos, symbol_len/2, guard_len> correlator;
 	CODE::CRC<uint16_t> crc;
 	CODE::OrderedStatisticsDecoder<255, 71, 4> osddec;
@@ -179,7 +184,7 @@ struct Decoder
 	cmplx chan[mls1_len];
 	cmplx fdom[2 * symbol_len], tdom[symbol_len];
 	value rgb_line[2 * 3 * img_width];
-	value phase[mls1_len];
+	value phase[mls1_len], index[mls1_len];
 	value cfo_rad, sfo_rad;
 	int symbol_pos;
 
@@ -350,15 +355,29 @@ struct Decoder
 				for (int i = 0; i < guard_len; ++i)
 					osc();
 				fwd(fdom+symbol_len*k, tdom);
-				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+mls1_off)+symbol_len*k] /= chan[i];
-				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+mls1_off)+symbol_len*k] = cmplx(
-						fdom[bin(i+mls1_off)+symbol_len*k].real() * nrz(seq2()),
-						fdom[bin(i+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
+				for (int i = teeth_off, l = 0; i < mls1_len; i += teeth_dist+1, ++l) {
+					index[l] = i+mls1_off;
+					phase[l] = arg(fdom[bin(i+mls1_off)+symbol_len*k] / chan[i]);
+				}
+				tse.compute(index, phase, teeth_count);
+				for (int i = 0; i < mls1_len; ++i)
+					chan[i] *= DSP::polar<value>(1, tse(i+mls1_off));
+				for (int i = teeth_off; i < mls1_len; i += teeth_dist+1)
+					chan[i] = fdom[bin(i+mls1_off)+symbol_len*k];
+				for (int i = 0, l = 0; i < img_width; ++i, ++l) {
+					if ((i + teeth_off) % teeth_dist == 0)
+						++l;
+					fdom[bin(l+mls1_off)+symbol_len*k] /= chan[l];
+					fdom[bin(l+mls1_off)+symbol_len*k] = cmplx(
+						fdom[bin(l+mls1_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(l+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
+				}
 			}
-			for (int i = 0; i < img_width; i += 2)
-				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(i+mls1_off), fdom+bin(i+mls1_off)+symbol_len);
+			for (int i = 0, l = 0; i < img_width; i += 2, l += 2) {
+				if ((i + teeth_off) % teeth_dist == 0)
+					++l;
+				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(l+mls1_off), fdom+bin(l+mls1_off)+symbol_len);
+			}
 			pel->write(rgb_line, 2 * img_width);
 		}
 	}

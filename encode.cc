@@ -26,10 +26,13 @@ struct Encoder
 	static const int guard_len = symbol_len / 8;
 	static const int img_width = 320;
 	static const int img_height = 240;
+	static const int teeth_count = 16;
+	static const int teeth_dist = img_width / teeth_count;
+	static const int teeth_off = teeth_dist / 2;
 	static const int frame_width = 32;
 	static const int mls0_len = 127;
 	static const int mls0_poly = 0b10001001;
-	static const int mls1_len = img_width;
+	static const int mls1_len = img_width + teeth_count;
 	static const int mls1_poly = 0b1100110001;
 	static const int mls2_poly = 0b10001000000001011;
 	static const int mls3_poly = 0b10111010010000001;
@@ -211,20 +214,29 @@ struct Encoder
 		schmidl_cox();
 		meta_data((call_sign << 8) | 1);
 		CODE::MLS seq2(mls2_poly), seq3(mls3_poly);
-		value img_fac = sqrt(value(symbol_len) / value(img_width));
+		value img_fac = sqrt(value(symbol_len) / value(mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		for (int j = 0; j < img_height; j += 2) {
 			if (j%8 == 0)
 				pilot_block();
 			pel->read(rgb_line, 2 * img_width);
-			for (int i = 0; i < img_width; i += 2)
-				rgb_to_cmplx(fdom+bin(i+mls1_off), fdom+bin(i+mls1_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+			for (int i = 0, l = 0; i < img_width; i += 2, l += 2) {
+				if ((i + teeth_off) % teeth_dist == 0) {
+					fdom[bin(l+mls1_off)] = 1;
+					fdom[bin(l+mls1_off)+symbol_len] = 1;
+					++l;
+				}
+				rgb_to_cmplx(fdom+bin(l+mls1_off), fdom+bin(l+mls1_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
+			}
 			for (int k = 0; k < 2; ++k) {
-				for (int i = 0; i < img_width; ++i)
-					fdom[bin(i+mls1_off)] = img_fac * cmplx(
-						fdom[bin(i+mls1_off)+symbol_len*k].real() * nrz(seq2()),
-						fdom[bin(i+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
+				for (int i = 0, l = 0; i < img_width; ++i, ++l) {
+					if ((i + teeth_off) % teeth_dist == 0)
+						++l;
+					fdom[bin(l+mls1_off)] = img_fac * cmplx(
+						fdom[bin(l+mls1_off)+symbol_len*k].real() * nrz(seq2()),
+						fdom[bin(l+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
+				}
 				symbol(kern1);
 			}
 		}
