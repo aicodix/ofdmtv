@@ -240,6 +240,7 @@ struct Encoder
 				symbol(kern1);
 			}
 		}
+		pilot_block();
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
 		symbol();
