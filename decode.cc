@@ -321,7 +321,7 @@ struct Decoder
 		for (int i = 0; i < symbol_pos+(symbol_len+guard_len); ++i)
 			buf = next_sample();
 
-		CODE::MLS seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
+		CODE::MLS seq0(mls0_poly), seq1(mls1_poly), seq2(mls2_poly), seq3(mls3_poly);
 		for (int j = 0; j < img_height; j += 2) {
 			if (j%8==0) {
 				for (int i = 0; i < symbol_len; ++i)
@@ -356,6 +356,7 @@ struct Decoder
 					osc();
 				fwd(fdom+symbol_len*k, tdom);
 				for (int i = teeth_off, l = 0; i < mls1_len; i += teeth_dist+1, ++l) {
+					fdom[bin(i+mls1_off)+symbol_len*k] *= nrz(seq0());
 					index[l] = i+mls1_off;
 					phase[l] = arg(fdom[bin(i+mls1_off)+symbol_len*k] / chan[i]);
 				}

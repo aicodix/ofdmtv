@@ -213,7 +213,7 @@ struct Encoder
 		pilot_block();
 		schmidl_cox();
 		meta_data((call_sign << 8) | 1);
-		CODE::MLS seq2(mls2_poly), seq3(mls3_poly);
+		CODE::MLS seq0(mls0_poly), seq2(mls2_poly), seq3(mls3_poly);
 		value img_fac = sqrt(value(symbol_len) / value(mls1_len));
 		for (int i = 0; i < symbol_len; ++i)
 			fdom[i] = 0;
@@ -229,7 +229,7 @@ struct Encoder
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0, l = 0; i < img_width; ++i, ++l) {
 					if (i % teeth_dist == teeth_off) {
-						fdom[bin(l+mls1_off)] = 1;
+						fdom[bin(l+mls1_off)] = img_fac * nrz(seq0());
 						++l;
 					}
 					fdom[bin(l+mls1_off)] = img_fac * cmplx(
