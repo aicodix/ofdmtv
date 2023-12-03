@@ -365,7 +365,7 @@ struct Decoder
 				for (int i = teeth_off; i < mls1_len; i += teeth_dist+1)
 					chan[i] = fdom[bin(i+mls1_off)+symbol_len*k];
 				for (int i = 0, l = 0; i < img_width; ++i, ++l) {
-					if ((i + teeth_off) % teeth_dist == 0)
+					if (i % teeth_dist == teeth_off)
 						++l;
 					fdom[bin(l+mls1_off)+symbol_len*k] /= chan[l];
 					fdom[bin(l+mls1_off)+symbol_len*k] = cmplx(
@@ -374,7 +374,7 @@ struct Decoder
 				}
 			}
 			for (int i = 0, l = 0; i < img_width; i += 2, l += 2) {
-				if ((i + teeth_off) % teeth_dist == 0)
+				if (i % teeth_dist == teeth_off)
 					++l;
 				cmplx_to_rgb(rgb_line+3*i, rgb_line+3*(i+img_width), fdom+bin(l+mls1_off), fdom+bin(l+mls1_off)+symbol_len);
 			}

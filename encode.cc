@@ -222,17 +222,16 @@ struct Encoder
 				pilot_block();
 			pel->read(rgb_line, 2 * img_width);
 			for (int i = 0, l = 0; i < img_width; i += 2, l += 2) {
-				if ((i + teeth_off) % teeth_dist == 0) {
-					fdom[bin(l+mls1_off)] = 1;
-					fdom[bin(l+mls1_off)+symbol_len] = 1;
+				if (i % teeth_dist == teeth_off)
 					++l;
-				}
 				rgb_to_cmplx(fdom+bin(l+mls1_off), fdom+bin(l+mls1_off)+symbol_len, rgb_line+3*i, rgb_line+3*(img_width+i));
 			}
 			for (int k = 0; k < 2; ++k) {
 				for (int i = 0, l = 0; i < img_width; ++i, ++l) {
-					if ((i + teeth_off) % teeth_dist == 0)
+					if (i % teeth_dist == teeth_off) {
+						fdom[bin(l+mls1_off)] = 1;
 						++l;
+					}
 					fdom[bin(l+mls1_off)] = img_fac * cmplx(
 						fdom[bin(l+mls1_off)+symbol_len*k].real() * nrz(seq2()),
 						fdom[bin(l+mls1_off)+symbol_len*k].imag() * nrz(seq3()));
